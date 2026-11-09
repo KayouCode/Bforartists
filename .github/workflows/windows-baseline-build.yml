@@ -1,0 +1,205 @@
+name: Windows baseline build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/lestudio-topbar
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 330
+    env:
+      GIT_LFS_SKIP_SMUDGE: "1"
+      CL_MPCount: "2"
+
+    steps:
+      - name: Checkout source revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          lfs: false
+          submodules: false
+
+      - name: Verify immutable baseline
+        shell: pwsh
+        run: |
+          $expected = "0a1ca45552dba1006ae0fb5c4dd36657622a4e66"
+          git switch --detach $expected
+          $actual = git rev-parse HEAD
+          if ($actual -ne $expected) {
+            throw "Unexpected source revision: $actual"
+          }
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Record runner baseline
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path evidence | Out-Null
+          $os = Get-CimInstance Win32_OperatingSystem
+          $drive = Get-PSDrive C
+          [pscustomobject]@{
+            phase = "runner-baseline"
+            timestamp_utc = (Get-Date).ToUniversalTime().ToString("o")
+            commit = (git rev-parse HEAD)
+            branch = "codex/lestudio-topbar"
+            cpu_logical = $env:NUMBER_OF_PROCESSORS
+            ram_total_bytes = [int64]$os.TotalVisibleMemorySize * 1KB
+            ram_free_bytes = [int64]$os.FreePhysicalMemory * 1KB
+            disk_free_bytes = [int64]$drive.Free
+            disk_used_bytes = [int64]$drive.Used
+          } | ConvertTo-Json | Set-Content evidence/runner-baseline.json
+          & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -format json | Set-Content evidence/visual-studio.json
+          cmake --version | Set-Content evidence/cmake-version.txt
+          git --version | Set-Content evidence/git-version.txt
+          git lfs version | Set-Content evidence/git-lfs-version.txt
+
+      - name: Reclaim unused ephemeral runner space
+        shell: pwsh
+        run: |
+          $before = (Get-PSDrive C).Free
+          $paths = @(
+            $env:AGENT_TOOLSDIRECTORY,
+            "C:\Android",
+            "C:\Program Files\Microsoft SDKs\Azure"
+          ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+          foreach ($path in $paths) {
+            Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Continue
+          }
+          $after = (Get-PSDrive C).Free
+          [pscustomobject]@{
+            phase = "runner-cleanup"
+            timestamp_utc = (Get-Date).ToUniversalTime().ToString("o")
+            disk_free_before_bytes = [int64]$before
+            disk_free_after_bytes = [int64]$after
+            disk_reclaimed_bytes = [int64]($after - $before)
+            removed_paths = $paths
+          } | ConvertTo-Json | Set-Content evidence/runner-cleanup.json
+
+      - name: Fetch official Windows libraries
+        shell: pwsh
+        run: |
+          git config --local submodule.lib/windows_x64.update checkout
+          git submodule update --init --depth 1 lib/windows_x64
+          git -C lib/windows_x64 lfs pull
+          git -C lib/windows_x64 lfs checkout
+          $actual = git -C lib/windows_x64 rev-parse HEAD
+          if ($actual -ne "60d6e96b917568278d400a4024c98da0fb777338") {
+            throw "Unexpected Windows library revision: $actual"
+          }
+
+      - name: Materialize source LFS files
+        shell: pwsh
+        run: |
+          git lfs pull
+          git lfs checkout
+
+      - name: Reclaim checkout caches
+        shell: pwsh
+        run: |
+          $paths = @(
+            ".git\lfs\objects",
+            ".git\modules\lib\windows_x64\lfs\objects"
+          )
+          foreach ($path in $paths) {
+            if (Test-Path -LiteralPath $path) {
+              Remove-Item -LiteralPath $path -Recurse -Force
+            }
+          }
+          git status --short | Set-Content evidence/git-status-before-build.txt
+          $drive = Get-PSDrive C
+          [pscustomobject]@{
+            phase = "after-fetch"
+            timestamp_utc = (Get-Date).ToUniversalTime().ToString("o")
+            disk_free_bytes = [int64]$drive.Free
+            disk_used_bytes = [int64]$drive.Used
+          } | ConvertTo-Json | Set-Content evidence/after-fetch.json
+
+      - name: Build unchanged Bforartists baseline
+        shell: pwsh
+        run: |
+          $samples = [System.Collections.Generic.List[object]]::new()
+          $started = Get-Date
+          $process = Start-Process cmd.exe -ArgumentList @(
+            "/d", "/s", "/c",
+            "set CL_MPCount=2 && call make.bat 2022 builddir C:\bfa-build"
+          ) -NoNewWindow -PassThru
+          do {
+            $os = Get-CimInstance Win32_OperatingSystem
+            $drive = Get-PSDrive C
+            $samples.Add([pscustomobject]@{
+              timestamp_utc = (Get-Date).ToUniversalTime().ToString("o")
+              ram_free_bytes = [int64]$os.FreePhysicalMemory * 1KB
+              disk_free_bytes = [int64]$drive.Free
+            })
+            Start-Sleep -Seconds 5
+            $process.Refresh()
+          } while (-not $process.HasExited)
+          $ended = Get-Date
+          $samples | Export-Csv evidence/build-resource-samples.csv -NoTypeInformation
+          $os = Get-CimInstance Win32_OperatingSystem
+          $totalRam = [int64]$os.TotalVisibleMemorySize * 1KB
+          [pscustomobject]@{
+            started_utc = $started.ToUniversalTime().ToString("o")
+            ended_utc = $ended.ToUniversalTime().ToString("o")
+            duration_seconds = [math]::Round(($ended - $started).TotalSeconds, 3)
+            exit_code = $process.ExitCode
+            ram_total_bytes = $totalRam
+            ram_peak_used_bytes = $totalRam - (($samples | Measure-Object ram_free_bytes -Minimum).Minimum)
+            disk_peak_used_bytes = ((Get-PSDrive C).Used + (Get-PSDrive C).Free) - (($samples | Measure-Object disk_free_bytes -Minimum).Minimum)
+            disk_minimum_free_bytes = ($samples | Measure-Object disk_free_bytes -Minimum).Minimum
+          } | ConvertTo-Json | Set-Content evidence/build-measurements.json
+          if ($process.ExitCode -ne 0) {
+            throw "Build failed with exit code $($process.ExitCode)"
+          }
+
+      - name: Verify executable and launch headlessly
+        shell: pwsh
+        run: |
+          $exe = "C:\bfa-build\bin\Release\bforartists.exe"
+          if (-not (Test-Path -LiteralPath $exe)) {
+            throw "Bforartists executable was not produced"
+          }
+          $launchLog = Join-Path $PWD "evidence\headless-launch.txt"
+          & $exe --background --factory-startup --python-expr "import bpy; print('LESTUDIO_BASELINE_LAUNCH_OK', bpy.app.version_string, bpy.app.build_hash.decode())" *>&1 | Tee-Object -FilePath $launchLog
+          if ($LASTEXITCODE -ne 0) {
+            throw "Headless launch failed with exit code $LASTEXITCODE"
+          }
+          if (-not (Select-String -Path $launchLog -SimpleMatch "LESTUDIO_BASELINE_LAUNCH_OK")) {
+            throw "Headless launch marker missing"
+          }
+          Get-FileHash -Algorithm SHA256 $exe | Format-List | Out-String | Set-Content evidence/bforartists-sha256.txt
+          Get-Item $exe | Select-Object FullName,Length,LastWriteTimeUtc | ConvertTo-Json | Set-Content evidence/bforartists-file.json
+
+      - name: Record final resource usage
+        if: always()
+        shell: pwsh
+        run: |
+          $os = Get-CimInstance Win32_OperatingSystem
+          $drive = Get-PSDrive C
+          [pscustomobject]@{
+            phase = "final"
+            timestamp_utc = (Get-Date).ToUniversalTime().ToString("o")
+            ram_total_bytes = [int64]$os.TotalVisibleMemorySize * 1KB
+            ram_free_bytes = [int64]$os.FreePhysicalMemory * 1KB
+            disk_free_bytes = [int64]$drive.Free
+            disk_used_bytes = [int64]$drive.Used
+          } | ConvertTo-Json | Set-Content evidence/final-resources.json
+          if (Test-Path C:\bfa-build\Build.log) {
+            Copy-Item C:\bfa-build\Build.log evidence\Build.log
+          }
+
+      - name: Upload compact evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-baseline-evidence
+          path: evidence
+          retention-days: 1
+          if-no-files-found: error
+
