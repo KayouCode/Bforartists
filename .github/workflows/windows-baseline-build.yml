@@ -2,6 +2,9 @@ name: Windows baseline build
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - codex/lestudio-topbar
 
 permissions:
   contents: read
