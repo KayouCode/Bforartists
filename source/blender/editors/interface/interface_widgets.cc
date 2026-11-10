@@ -5829,7 +5829,7 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
   }
 
   WidgetType lestudio_wt;
-  ThemeWidgetColors lestudio_colors;
+  uiWidgetColors lestudio_colors;
   if (but->type == ButtonType::Tab && (but->drawflag & BUT_LESTUDIO_TAB)) {
     lestudio_wt = *wt;
     lestudio_colors = *wt->wcol_theme;
