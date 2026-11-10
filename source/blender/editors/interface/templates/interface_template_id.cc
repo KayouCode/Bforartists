@@ -1470,14 +1470,44 @@ static void template_ID_tabs(const bContext *C,
   Block *block = layout.block();
   const uiStyle *style = style_get_dpi();
 
+  const bool lestudio_workspace_tabs =
+      (RNA_type_to_ID_code(type) == ID_WS && CTX_wm_area(C) &&
+       CTX_wm_area(C)->spacetype == SPACE_TOPBAR);
+
+  const auto workspace_icon = [](const char *name) {
+    if (STREQ(name, "Accueil")) {
+      return ICON_HOME;
+    }
+    if (STREQ(name, "Modélisation")) {
+      return ICON_MESH_CUBE;
+    }
+    if (STREQ(name, "Sculpture")) {
+      return ICON_SCULPTMODE_HLT;
+    }
+    if (STREQ(name, "Matériaux")) {
+      return ICON_MATERIAL;
+    }
+    if (STREQ(name, "Rendu")) {
+      return ICON_RENDER_STILL;
+    }
+    if (STREQ(name, "Animation")) {
+      return ICON_ANIM_DATA;
+    }
+    if (STREQ(name, "Scripting")) {
+      return ICON_SCRIPT;
+    }
+    return ICON_NONE;
+  };
+
   for (ID *id : BKE_id_ordered_list(template_id.idlb)) {
+    const int icon = lestudio_workspace_tabs ? workspace_icon(id->name + 2) : ICON_NONE;
     const int name_width = fontstyle_string_width(&style->widget, id->name + 2);
-    const int but_width = name_width + UI_UNIT_X;
+    const int but_width = name_width + UI_UNIT_X + (icon != ICON_NONE ? UI_UNIT_X : 0);
 
     ButtonTab *tab = static_cast<ButtonTab *>(uiDefButR_prop(block,
                                                              ButtonType::Tab,
                                                              id->name + 2,
-                                                             0,
+                                                             icon,
                                                              0,
                                                              but_width,
                                                              but_height,
@@ -1493,6 +1523,10 @@ static void template_ID_tabs(const bContext *C,
     button_drag_set_id(tab, id);
     tab->custom_data = static_cast<void *>(id);
     tab->menu = mt;
+
+    if (lestudio_workspace_tabs) {
+      tab->drawflag |= BUT_LESTUDIO_TAB;
+    }
 
     button_drawflag_enable(tab, but_align);
   }

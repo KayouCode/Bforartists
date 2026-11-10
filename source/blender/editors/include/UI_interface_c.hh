@@ -527,6 +527,9 @@ enum {
 
   /** Draw icon inverted to indicate a special state. */
   BUT_ICON_INVERT = 1 << 27,
+
+  /** PASS / LeStudio top-bar workspace tab styling. */
+  BUT_LESTUDIO_TAB = 1 << 28,
 };
 
 enum class ButPointerType : uint8_t {

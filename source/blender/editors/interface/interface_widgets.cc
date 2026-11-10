@@ -5828,6 +5828,27 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
     return;
   }
 
+  WidgetType lestudio_wt;
+  ThemeWidgetColors lestudio_colors;
+  if (but->type == ButtonType::Tab && (but->drawflag & BUT_LESTUDIO_TAB)) {
+    lestudio_wt = *wt;
+    lestudio_colors = *wt->wcol_theme;
+    /* Anthracite inactive tabs, gold selected tab, matching the approved
+     * LeStudio header without changing tabs elsewhere in Bforartists. */
+    const uchar inner[4] = {24, 25, 27, 255};
+    const uchar inner_sel[4] = {112, 72, 5, 255};
+    const uchar outline[4] = {212, 175, 55, 255};
+    const uchar text[4] = {225, 225, 225, 255};
+    const uchar text_sel[4] = {255, 255, 255, 255};
+    copy_v4_v4_uchar(lestudio_colors.inner, inner);
+    copy_v4_v4_uchar(lestudio_colors.inner_sel, inner_sel);
+    copy_v4_v4_uchar(lestudio_colors.outline, outline);
+    copy_v4_v4_uchar(lestudio_colors.text, text);
+    copy_v4_v4_uchar(lestudio_colors.text_sel, text_sel);
+    lestudio_wt.wcol_theme = &lestudio_colors;
+    wt = &lestudio_wt;
+  }
+
   // rcti disablerect = *rect; /* rect gets clipped smaller for text */
 
   const int roundboxalign = widget_roundbox_set(but, rect);

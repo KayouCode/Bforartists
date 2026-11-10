@@ -207,6 +207,7 @@ if(WITH_BLENDER)
 
       # ------------------------- icons --------------------------*/
       none # never change, needs to stay on top of the list!
+      lestudio_logo
 
       # letter def icon
       anim

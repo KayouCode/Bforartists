@@ -27,68 +27,18 @@ class TOPBAR_HT_tool_bar(Header):
     def draw(self, context):
         layout = self.layout
 
-        preferences = context.preferences
-        addon_prefs = preferences.addons["bforartists_toolbar_settings"].preferences
-
-        layout.popover(panel="TOPBAR_PT_main", text = "", icon="NONE")
-
-        ############## toolbars ##########################################################################
-
-        if addon_prefs.topbar_show_quicktoggle:
-            if addon_prefs.topbar_file_cbox:
-                layout.scale_x = 0.7
-                layout.operator("screen.header_topbar_file", text = "", icon = "THREE_DOTS")
-                layout.scale_x = 1
-                TOPBAR_MT_file.draw_menus(layout, context)
-            if addon_prefs.topbar_mesh_cbox:
-                layout.scale_x = 0.7
-                layout.operator("screen.header_topbar_meshedit", text = "", icon = "THREE_DOTS")
-                layout.scale_x = 1
-                TOPBAR_MT_meshedit.draw_menus(layout, context)
-            if addon_prefs.topbar_primitives_cbox:
-                layout.scale_x = 0.7
-                layout.operator("screen.header_topbar_primitives", text = "", icon = "THREE_DOTS")
-                layout.scale_x = 1
-                TOPBAR_MT_primitives.draw_menus(layout, context)
-            if addon_prefs.topbar_image_cbox:
-                layout.scale_x = 0.7
-                layout.operator("screen.header_topbar_image", text = "", icon = "THREE_DOTS")
-                layout.scale_x = 1
-                TOPBAR_MT_image.draw_menus(layout, context)
-            if addon_prefs.topbar_tools_cbox:
-                layout.scale_x = 0.7
-                layout.operator("screen.header_topbar_tools", text = "", icon = "THREE_DOTS")
-                layout.scale_x = 1
-                TOPBAR_MT_tools.draw_menus(layout, context)
-            if addon_prefs.topbar_animation_cbox:
-                layout.scale_x = 0.7
-                layout.operator("screen.header_topbar_animation", text = "", icon = "THREE_DOTS")
-                layout.scale_x = 1
-                TOPBAR_MT_animation.draw_menus(layout, context)
-            if addon_prefs.topbar_edit_cbox:
-                layout.scale_x = 0.7
-                layout.operator("screen.header_topbar_edit", text = "", icon = "THREE_DOTS")
-                layout.scale_x = 1
-                TOPBAR_MT_edit.draw_menus(layout, context)
-
-            if addon_prefs.topbar_misc_cbox:
-                layout.separator_spacer()
-                layout.scale_x = 0.7
-                layout.operator("screen.header_topbar_misc", text = "", icon = "THREE_DOTS")
-                layout.scale_x = 1
-                TOPBAR_MT_misc.draw_menus(layout, context)
-        else:
-            TOPBAR_MT_file.draw_menus(layout, context)
-            TOPBAR_MT_meshedit.draw_menus(layout, context)
-            TOPBAR_MT_primitives.draw_menus(layout, context)
-            TOPBAR_MT_image.draw_menus(layout, context)
-            TOPBAR_MT_tools.draw_menus(layout, context)
-            TOPBAR_MT_animation.draw_menus(layout, context)
-            TOPBAR_MT_edit.draw_menus(layout, context)
-
-            layout.separator_spacer()
-
-            TOPBAR_MT_misc.draw_menus(layout, context)
+        # PASS / LeStudio: a single, functional menu line matching the approved
+        # reference. Every entry opens an existing native Bforartists menu.
+        menus = layout.row(align=True)
+        menus.menu("TOPBAR_MT_file", text="Fichier")
+        menus.menu("TOPBAR_MT_edit", text="Édition")
+        menus.menu("VIEW3D_MT_object", text="Objet")
+        menus.menu("VIEW3D_MT_view", text="Vue")
+        menus.menu("VIEW3D_MT_select_object", text="Sélection")
+        menus.menu("VIEW3D_MT_add", text="Ajouter")
+        menus.menu("VIEW3D_MT_edit_mesh", text="Maillage")
+        menus.menu("VIEW3D_MT_object_context_menu", text="Outils")
+        menus.menu("TOPBAR_MT_help", text="Aide")
 
 
 ######################################## Main (Options) ########################################

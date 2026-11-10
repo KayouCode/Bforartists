@@ -36,7 +36,9 @@ class TOPBAR_HT_upper_bar(Header):
         window = context.window
         screen = context.screen
 
-        TOPBAR_MT_editor_menus.draw_collapsible(context, layout)
+        brand = layout.row(align=True)
+        brand.scale_x = 1.08
+        brand.label(text="LeStudio", icon="LESTUDIO_LOGO")
 
         layout.separator(type="LINE")
 
@@ -44,7 +46,6 @@ class TOPBAR_HT_upper_bar(Header):
             layout.template_ID_tabs(
                 window,
                 "workspace",
-                new="workspace.add",
                 menu="TOPBAR_MT_workspace_menu",
             )
         else:
@@ -61,6 +62,10 @@ class TOPBAR_HT_upper_bar(Header):
         if not screen.show_statusbar:
             layout.template_reports_banner()
             layout.template_running_jobs()
+
+        controls = layout.row(align=True)
+        controls.operator("screen.userpref_show", text="", icon="PREFERENCES")
+        controls.menu("TOPBAR_MT_help", text="", icon="QUESTION")
         # BFA - now in the toolbar as an opt-in
         # Active workspace view-layer is retrieved through window, not through workspace.
         # layout.template_ID(window, "scene", new="scene.new", unlink="scene.delete")

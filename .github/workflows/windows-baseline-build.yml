@@ -1,4 +1,4 @@
-name: Windows baseline build
+name: Windows LeStudio topbar build
 
 on:
   workflow_dispatch:
@@ -25,15 +25,12 @@ jobs:
           lfs: false
           submodules: false
 
-      - name: Verify immutable baseline
+      - name: Verify requested LeStudio revision
         shell: pwsh
         run: |
-          $expected = "0a1ca45552dba1006ae0fb5c4dd36657622a4e66"
-          git switch --detach $expected
+          New-Item -ItemType Directory -Force -Path evidence | Out-Null
           $actual = git rev-parse HEAD
-          if ($actual -ne $expected) {
-            throw "Unexpected source revision: $actual"
-          }
+          $actual | Set-Content evidence/source-commit.txt
           git diff --exit-code
           git diff --cached --exit-code
 
@@ -120,7 +117,7 @@ jobs:
             disk_used_bytes = [int64]$drive.Used
           } | ConvertTo-Json | Set-Content evidence/after-fetch.json
 
-      - name: Build unchanged Bforartists baseline
+      - name: Build Bforartists LeStudio topbar
         shell: pwsh
         run: |
           $samples = [System.Collections.Generic.List[object]]::new()
@@ -166,11 +163,11 @@ jobs:
             throw "Bforartists executable was not produced"
           }
           $launchLog = Join-Path $PWD "evidence\headless-launch.txt"
-          & $exe --background --factory-startup --python-expr "import bpy; print('LESTUDIO_BASELINE_LAUNCH_OK', bpy.app.version_string, bpy.app.build_hash.decode())" *>&1 | Tee-Object -FilePath $launchLog
+          & $exe --background --factory-startup --python-expr "import bpy; print('LESTUDIO_TOPBAR_LAUNCH_OK', bpy.app.version_string, bpy.app.build_hash.decode(), [w.name for w in bpy.data.workspaces])" *>&1 | Tee-Object -FilePath $launchLog
           if ($LASTEXITCODE -ne 0) {
             throw "Headless launch failed with exit code $LASTEXITCODE"
           }
-          if (-not (Select-String -Path $launchLog -SimpleMatch "LESTUDIO_BASELINE_LAUNCH_OK")) {
+          if (-not (Select-String -Path $launchLog -SimpleMatch "LESTUDIO_TOPBAR_LAUNCH_OK")) {
             throw "Headless launch marker missing"
           }
           Get-FileHash -Algorithm SHA256 $exe | Format-List | Out-String | Set-Content evidence/bforartists-sha256.txt
@@ -198,8 +195,17 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-baseline-evidence
+          name: windows-lestudio-topbar-evidence
           path: evidence
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload compiled executable for local GUI validation
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-lestudio-topbar-executable
+          path: C:\bfa-build\bin\Release\bforartists.exe
           retention-days: 1
           if-no-files-found: error
 
