@@ -180,13 +180,16 @@ jobs:
             toolbar = (Get-FileHash $toolbar.FullName -Algorithm SHA256).Hash
             startup = (Get-FileHash $startup.FullName -Algorithm SHA256).Hash
           }
-          foreach ($name in $expectedResources.Keys) {
+          # Text UI scripts must be byte-identical. startup.blend is rewritten by
+          # the Bforartists install stage, so its effective contents are verified
+          # by launching both the release tree and the independent extraction.
+          foreach ($name in @("topbar", "toolbar")) {
             if ($expectedResources[$name] -ne $actualResources[$name]) {
               throw "Release resource mismatch: $name"
             }
           }
           $launchLog = Join-Path $PWD "evidence\headless-launch.txt"
-          & $exe --background --factory-startup --python-expr "import bpy; print('LESTUDIO_TOPBAR_LAUNCH_OK', bpy.app.version_string, bpy.app.build_hash.decode(), [w.name for w in bpy.data.workspaces])" *>&1 | Tee-Object -FilePath $launchLog
+          & $exe --background --factory-startup --python-expr "import bpy; names={w.name for w in bpy.data.workspaces}; required={'Accueil','Modélisation','Sculpture','Matériaux','Rendu','Animation','Scripting'}; assert required <= names, (names, required); assert bpy.context.window.workspace.name == 'Modélisation', bpy.context.window.workspace.name; print('LESTUDIO_TOPBAR_LAUNCH_OK', bpy.app.version_string, bpy.app.build_hash.decode(), sorted(names))" *>&1 | Tee-Object -FilePath $launchLog
           if ($LASTEXITCODE -ne 0) {
             throw "Headless launch failed with exit code $LASTEXITCODE"
           }
@@ -233,7 +236,7 @@ jobs:
             throw "Independent extraction is incomplete"
           }
           $independentLog = Join-Path $PWD "evidence\independent-package-launch.txt"
-          & $extractedExe --background --factory-startup --python-expr "import bpy; expected='$((git rev-parse HEAD).Substring(0,12))'; actual=bpy.app.build_hash.decode(); assert actual.startswith(expected), (actual, expected); names={w.name for w in bpy.data.workspaces}; required={'Accueil','Modélisation','Sculpture','Matériaux','Rendu','Animation','Scripting'}; assert required <= names, (names, required); print('LESTUDIO_INDEPENDENT_PACKAGE_OK', actual, sorted(names))" *>&1 | Tee-Object -FilePath $independentLog
+          & $extractedExe --background --factory-startup --python-expr "import bpy; expected='$((git rev-parse HEAD).Substring(0,12))'; actual=bpy.app.build_hash.decode(); assert actual.startswith(expected), (actual, expected); names={w.name for w in bpy.data.workspaces}; required={'Accueil','Modélisation','Sculpture','Matériaux','Rendu','Animation','Scripting'}; assert required <= names, (names, required); assert bpy.context.window.workspace.name == 'Modélisation', bpy.context.window.workspace.name; print('LESTUDIO_INDEPENDENT_PACKAGE_OK', actual, sorted(names))" *>&1 | Tee-Object -FilePath $independentLog
           if ($LASTEXITCODE -ne 0 -or
               -not (Select-String -Path $independentLog -SimpleMatch "LESTUDIO_INDEPENDENT_PACKAGE_OK")) {
             throw "Independent extracted package launch failed"
