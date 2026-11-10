@@ -155,12 +155,35 @@ jobs:
             throw "Build failed with exit code $($process.ExitCode)"
           }
 
-      - name: Verify executable and launch headlessly
+      - name: Verify complete Windows release tree
         shell: pwsh
         run: |
-          $exe = "C:\bfa-build\bin\Release\bforartists.exe"
+          $release = "C:\bfa-build\bin\Release"
+          $exe = Join-Path $release "bforartists.exe"
           if (-not (Test-Path -LiteralPath $exe)) {
             throw "Bforartists executable was not produced"
+          }
+          $topbar = Get-ChildItem -LiteralPath $release -Filter space_topbar.py -File -Recurse
+          $toolbar = Get-ChildItem -LiteralPath $release -Filter space_topbar_toolbar.py -File -Recurse
+          $startup = Get-ChildItem -LiteralPath $release -Filter startup.blend -File -Recurse |
+            Where-Object { $_.FullName -like "*bl_app_templates_system\All\startup.blend" }
+          if ($topbar.Count -ne 1 -or $toolbar.Count -ne 1 -or $startup.Count -ne 1) {
+            throw "Complete UI resources were not staged in the release tree"
+          }
+          $expectedResources = @{
+            topbar = (Get-FileHash "scripts\startup\bl_ui\space_topbar.py" -Algorithm SHA256).Hash
+            toolbar = (Get-FileHash "scripts\startup\bl_ui\space_topbar_toolbar.py" -Algorithm SHA256).Hash
+            startup = (Get-FileHash "release\datafiles\startup.blend" -Algorithm SHA256).Hash
+          }
+          $actualResources = @{
+            topbar = (Get-FileHash $topbar.FullName -Algorithm SHA256).Hash
+            toolbar = (Get-FileHash $toolbar.FullName -Algorithm SHA256).Hash
+            startup = (Get-FileHash $startup.FullName -Algorithm SHA256).Hash
+          }
+          foreach ($name in $expectedResources.Keys) {
+            if ($expectedResources[$name] -ne $actualResources[$name]) {
+              throw "Release resource mismatch: $name"
+            }
           }
           $launchLog = Join-Path $PWD "evidence\headless-launch.txt"
           & $exe --background --factory-startup --python-expr "import bpy; print('LESTUDIO_TOPBAR_LAUNCH_OK', bpy.app.version_string, bpy.app.build_hash.decode(), [w.name for w in bpy.data.workspaces])" *>&1 | Tee-Object -FilePath $launchLog
@@ -172,6 +195,58 @@ jobs:
           }
           Get-FileHash -Algorithm SHA256 $exe | Format-List | Out-String | Set-Content evidence/bforartists-sha256.txt
           Get-Item $exe | Select-Object FullName,Length,LastWriteTimeUtc | ConvertTo-Json | Set-Content evidence/bforartists-file.json
+          [pscustomobject]@{
+            commit = (git rev-parse HEAD)
+            executable = $exe
+            file_count = (Get-ChildItem -LiteralPath $release -File -Recurse).Count
+            uncompressed_bytes = (Get-ChildItem -LiteralPath $release -File -Recurse | Measure-Object Length -Sum).Sum
+            resources = $actualResources
+          } | ConvertTo-Json -Depth 4 | Set-Content evidence/release-tree.json
+
+      - name: Assemble and independently verify complete package
+        shell: pwsh
+        run: |
+          $release = "C:\bfa-build\bin\Release"
+          $artifactDir = "C:\lestudio-artifacts"
+          $extractDir = "C:\lestudio-independent-extraction"
+          New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+          $short = (git rev-parse --short=8 HEAD)
+          $archive = Join-Path $artifactDir "LeStudio-Windows-$short.zip"
+          & "C:\Program Files\7-Zip\7z.exe" a -tzip -mx=9 -mmt=2 $archive "$release\*"
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $archive)) {
+            throw "Complete Windows package creation failed"
+          }
+          New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+          & "C:\Program Files\7-Zip\7z.exe" x -y "-o$extractDir" $archive
+          if ($LASTEXITCODE -ne 0) {
+            throw "Independent package extraction failed"
+          }
+          $extractedExe = Join-Path $extractDir "bforartists.exe"
+          $extractedTopbar = Get-ChildItem -LiteralPath $extractDir -Filter space_topbar.py -File -Recurse
+          $extractedToolbar = Get-ChildItem -LiteralPath $extractDir -Filter space_topbar_toolbar.py -File -Recurse
+          $extractedStartup = Get-ChildItem -LiteralPath $extractDir -Filter startup.blend -File -Recurse |
+            Where-Object { $_.FullName -like "*bl_app_templates_system\All\startup.blend" }
+          if (-not (Test-Path -LiteralPath $extractedExe) -or
+              $extractedTopbar.Count -ne 1 -or
+              $extractedToolbar.Count -ne 1 -or
+              $extractedStartup.Count -ne 1) {
+            throw "Independent extraction is incomplete"
+          }
+          $independentLog = Join-Path $PWD "evidence\independent-package-launch.txt"
+          & $extractedExe --background --factory-startup --python-expr "import bpy; expected='$((git rev-parse HEAD).Substring(0,12))'; actual=bpy.app.build_hash.decode(); assert actual.startswith(expected), (actual, expected); names={w.name for w in bpy.data.workspaces}; required={'Accueil','Modélisation','Sculpture','Matériaux','Rendu','Animation','Scripting'}; assert required <= names, (names, required); print('LESTUDIO_INDEPENDENT_PACKAGE_OK', actual, sorted(names))" *>&1 | Tee-Object -FilePath $independentLog
+          if ($LASTEXITCODE -ne 0 -or
+              -not (Select-String -Path $independentLog -SimpleMatch "LESTUDIO_INDEPENDENT_PACKAGE_OK")) {
+            throw "Independent extracted package launch failed"
+          }
+          $archiveHash = Get-FileHash $archive -Algorithm SHA256
+          $archiveHash | Format-List | Out-String | Set-Content evidence/LeStudio-Windows-SHA256.txt
+          [pscustomobject]@{
+            archive = $archive
+            bytes = (Get-Item $archive).Length
+            sha256 = $archiveHash.Hash
+            commit = (git rev-parse HEAD)
+            independent_executable = $extractedExe
+          } | ConvertTo-Json | Set-Content evidence/complete-package.json
 
       - name: Record final resource usage
         if: always()
@@ -200,12 +275,13 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-      - name: Upload compiled executable for local GUI validation
+      - name: Upload complete autonomous Windows package
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-lestudio-topbar-executable
-          path: C:\bfa-build\bin\Release\bforartists.exe
+          name: windows-lestudio-complete-package
+          path: C:\lestudio-artifacts\LeStudio-Windows-*.zip
           retention-days: 1
           if-no-files-found: error
+          compression-level: 0
 
