@@ -1,0 +1,143 @@
+name: LeStudio real GUI capture diagnostic
+
+on:
+  push:
+    branches:
+      - codex/lestudio-topbar
+    paths:
+      - .github/workflows/windows-gui-capture.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  capture:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - name: Checkout diagnostic revision
+        uses: actions/checkout@v4
+
+      - name: Download existing autonomous package
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-lestudio-complete-package
+          path: package-artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 42844350661
+
+      - name: Attempt real graphical launch and capture
+        id: capture
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          New-Item -ItemType Directory -Force capture | Out-Null
+          $log = Join-Path $PWD "capture\launch-and-capture.log"
+          function Note([string]$message) {
+            $line = "$(Get-Date -Format o) $message"
+            $line | Tee-Object -FilePath $log -Append
+          }
+
+          Note "PACKAGE_COMMIT=b0940a3da76013c5c879f27fb6509a816559b6f2"
+          Note "CAPTURE_COMMIT=${{ github.sha }}"
+          Note "RUNNER_NAME=$env:RUNNER_NAME"
+          Note "SESSIONNAME=$env:SESSIONNAME"
+          (query user 2>&1 | Out-String) | Tee-Object -FilePath $log -Append
+
+          $outer = Get-ChildItem package-artifact -Filter "LeStudio-Windows-*.zip" -File
+          if ($outer.Count -ne 1) {
+            Note "BLOCKED: expected one complete package archive, found $($outer.Count)"
+            exit 2
+          }
+
+          $packageHash = (Get-FileHash $outer.FullName -Algorithm SHA256).Hash
+          Note "PACKAGE_PATH=$($outer.FullName)"
+          Note "PACKAGE_BYTES=$($outer.Length)"
+          Note "PACKAGE_SHA256=$packageHash"
+
+          Expand-Archive -LiteralPath $outer.FullName -DestinationPath extracted -Force
+          $exe = Join-Path $PWD "extracted\bforartists.exe"
+          if (-not (Test-Path -LiteralPath $exe)) {
+            Note "BLOCKED: bforartists.exe missing after extraction"
+            exit 3
+          }
+
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          Note "SCREEN=$($screen.Width)x$($screen.Height)"
+          Note "INTERACTIVE=$([Environment]::UserInteractive)"
+
+          $process = Start-Process -FilePath $exe -ArgumentList "--factory-startup" -PassThru
+          Note "PROCESS_ID=$($process.Id)"
+          Start-Sleep -Seconds 20
+          $process.Refresh()
+          Note "PROCESS_EXITED=$($process.HasExited)"
+          Note "MAIN_WINDOW_HANDLE=$($process.MainWindowHandle)"
+          Note "MAIN_WINDOW_TITLE=$($process.MainWindowTitle)"
+
+          if ($process.HasExited) {
+            Note "BLOCKED: LeStudio exited before capture"
+            exit 4
+          }
+          if (-not [Environment]::UserInteractive -or $process.MainWindowHandle -eq 0) {
+            Note "BLOCKED: GitHub-hosted runner has no exploitable interactive application window"
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            exit 5
+          }
+          if ($screen.Width -ne 1920 -or $screen.Height -ne 1080) {
+            Note "BLOCKED: real desktop resolution is not 1920x1080; refusing resampling or deformation"
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            exit 6
+          }
+
+          $bitmap = New-Object System.Drawing.Bitmap 1920,1080
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+          $graphics.CopyFromScreen(0,0,0,0,$bitmap.Size)
+          $png = Join-Path $PWD "capture\LeStudio_Interface_1920x1080.png"
+          $bitmap.Save($png,[System.Drawing.Imaging.ImageFormat]::Png)
+          $graphics.Dispose()
+          $bitmap.Dispose()
+
+          $check = [System.Drawing.Bitmap]::FromFile($png)
+          $samples = New-Object 'System.Collections.Generic.HashSet[int]'
+          $sum = 0L
+          for ($y=0; $y -lt 1080; $y+=24) {
+            for ($x=0; $x -lt 1920; $x+=24) {
+              $c=$check.GetPixel($x,$y)
+              [void]$samples.Add($c.ToArgb())
+              $sum += $c.R + $c.G + $c.B
+            }
+          }
+          $check.Dispose()
+          Note "SAMPLED_DISTINCT_COLORS=$($samples.Count)"
+          Note "SAMPLED_RGB_SUM=$sum"
+          if ($samples.Count -lt 16 -or $sum -lt 10000) {
+            Note "BLOCKED: capture is black, empty, or effectively uniform"
+            Remove-Item -LiteralPath $png -Force
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            exit 7
+          }
+
+          Note "CAPTURE_OK=$png"
+          Note "CAPTURE_SHA256=$((Get-FileHash $png -Algorithm SHA256).Hash)"
+          Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+
+      - name: Record final diagnostic status
+        if: always()
+        shell: pwsh
+        run: |
+          "capture_step_outcome=${{ steps.capture.outcome }}" |
+            Set-Content capture\workflow-status.txt
+
+      - name: Publish capture diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lestudio-real-gui-capture-diagnostic
+          path: capture
+          retention-days: 30
+          if-no-files-found: error
