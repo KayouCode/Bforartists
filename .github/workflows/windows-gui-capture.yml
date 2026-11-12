@@ -43,6 +43,7 @@ jobs:
           Note "PACKAGE_COMMIT=b0940a3da76013c5c879f27fb6509a816559b6f2"
           Note "CAPTURE_COMMIT=${{ github.sha }}"
           Note "MESA_SOURCE=https://github.com/pal1000/mesa-dist-win/releases/tag/26.2.6"
+          Note "MESA_VARIANT=release-mingw"
           Note "MESA_LICENSE=MIT"
           Note "RUNNER_NAME=$env:RUNNER_NAME"
           (query user 2>&1 | Out-String) | Tee-Object -FilePath $log -Append
@@ -57,12 +58,12 @@ jobs:
           if (-not (Test-Path -LiteralPath $exe)) { Note "BLOCKED: executable missing"; exit 3 }
 
           $mesaVersion = "26.2.6"
-          $mesaArchive = Join-Path $PWD "mesa3d-$mesaVersion-release-msvc.7z"
-          $mesaUrl = "https://github.com/pal1000/mesa-dist-win/releases/download/$mesaVersion/mesa3d-$mesaVersion-release-msvc.7z"
+          $mesaArchive = Join-Path $PWD "mesa3d-$mesaVersion-release-mingw.7z"
+          $mesaUrl = "https://github.com/pal1000/mesa-dist-win/releases/download/$mesaVersion/mesa3d-$mesaVersion-release-mingw.7z"
           Invoke-WebRequest -Uri $mesaUrl -OutFile $mesaArchive
           $mesaHash = (Get-FileHash $mesaArchive -Algorithm SHA256).Hash
           Note "MESA_ARCHIVE_SHA256=$mesaHash"
-          if ($mesaHash -ne "B2E00615FEABA45942343C265CC8C5F576142CA682C1AC6661922D4B72492877") {
+          if ($mesaHash -ne "DA0F71D9181B672C1918F3C342F11118C687F6059A46B16502845160733CC388") {
             Note "BLOCKED: Mesa archive hash mismatch"
             exit 4
           }
