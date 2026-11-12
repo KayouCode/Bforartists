@@ -302,7 +302,7 @@ jobs:
               [void][LeStudioRunnerInput]::SetCursorPos([int]$tab.X, 36)
               [LeStudioRunnerInput]::mouse_event(0x02, 0, 0, 0, [UIntPtr]::Zero)
               [LeStudioRunnerInput]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
-              Start-Sleep -Seconds 2
+              Start-Sleep -Seconds 6
               $eventsFile = Join-Path $PWD "capture\workspace-events.jsonl"
               $observed = $null
               if (Test-Path -LiteralPath $eventsFile) {
@@ -313,6 +313,8 @@ jobs:
               if ($observed -ne $tab.Name) { $tabFailures++ }
             }
             Note "TAB_FAILURES=$tabFailures"
+            [void][LeStudioRunnerInput]::SetCursorPos(900, 10)
+            Start-Sleep -Seconds 2
           }
 
           $bitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
