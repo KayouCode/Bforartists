@@ -71,7 +71,7 @@ jobs:
           Note "SCREEN=$($screen.Width)x$($screen.Height)"
           Note "INTERACTIVE=$([Environment]::UserInteractive)"
 
-          $process = Start-Process -FilePath $exe -ArgumentList "--factory-startup" -PassThru
+          $process = Start-Process -FilePath $exe -ArgumentList "--factory-startup" -WindowStyle Maximized -PassThru
           Note "PROCESS_ID=$($process.Id)"
           Start-Sleep -Seconds 20
           $process.Refresh()
@@ -88,16 +88,11 @@ jobs:
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
             exit 5
           }
-          if ($screen.Width -ne 1920 -or $screen.Height -ne 1080) {
-            Note "BLOCKED: real desktop resolution is not 1920x1080; refusing resampling or deformation"
-            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-            exit 6
-          }
-
-          $bitmap = New-Object System.Drawing.Bitmap 1920,1080
+          Note "CAPTURE_NATIVE_RESOLUTION=$($screen.Width)x$($screen.Height)"
+          $bitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
           $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
           $graphics.CopyFromScreen(0,0,0,0,$bitmap.Size)
-          $png = Join-Path $PWD "capture\LeStudio_Interface_1920x1080.png"
+          $png = Join-Path $PWD "capture\LeStudio_Interface_native.png"
           $bitmap.Save($png,[System.Drawing.Imaging.ImageFormat]::Png)
           $graphics.Dispose()
           $bitmap.Dispose()
@@ -105,8 +100,8 @@ jobs:
           $check = [System.Drawing.Bitmap]::FromFile($png)
           $samples = New-Object 'System.Collections.Generic.HashSet[int]'
           $sum = 0L
-          for ($y=0; $y -lt 1080; $y+=24) {
-            for ($x=0; $x -lt 1920; $x+=24) {
+          for ($y=0; $y -lt $screen.Height; $y+=16) {
+            for ($x=0; $x -lt $screen.Width; $x+=16) {
               $c=$check.GetPixel($x,$y)
               [void]$samples.Add($c.ToArgb())
               $sum += $c.R + $c.G + $c.B
