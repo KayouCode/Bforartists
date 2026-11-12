@@ -1,6 +1,11 @@
 name: LeStudio Mesa LLVMpipe GUI capture
 
 on:
+  push:
+    branches:
+      - codex/lestudio-topbar
+    paths:
+      - .github/workflows/windows-gui-capture.yml
   workflow_dispatch:
     inputs:
       package_run_id:
@@ -26,7 +31,7 @@ jobs:
           path: package-artifact
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.package_run_id }}
+          run-id: 43261331717
 
       - name: Deploy Mesa locally, verify OpenGL, and capture
         id: capture
@@ -39,7 +44,7 @@ jobs:
             "$(Get-Date -Format o) $message" | Tee-Object -FilePath $log -Append
           }
 
-          Note "PACKAGE_COMMIT=${{ github.sha }}"
+          Note "PACKAGE_COMMIT=c30afec8a45027c311f8d7c5f87ffc6a0d29e9d9"
           Note "CAPTURE_COMMIT=${{ github.sha }}"
           Note "MESA_SOURCE=https://github.com/pal1000/mesa-dist-win/releases/tag/26.2.6"
           Note "MESA_VARIANT=release-mingw"

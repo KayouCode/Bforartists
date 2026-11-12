@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   build:
+    if: ${{ !contains(github.event.head_commit.message, '[capture-only]') }}
     runs-on: windows-2022
     timeout-minutes: 330
     env:
