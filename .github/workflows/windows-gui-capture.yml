@@ -244,6 +244,33 @@ jobs:
           if ($process.HasExited -or $process.MainWindowHandle -eq 0) {
             Note "WARNING: no confirmed LeStudio main window; capturing desktop for diagnosis"
           }
+          else {
+            Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class LeStudioRunnerInput {
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
+            [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+            [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extraInfo);
+          }
+          '@
+            $foreground = [LeStudioRunnerInput]::SetForegroundWindow($process.MainWindowHandle)
+            Note "QUICK_SETUP_FOREGROUND=$foreground"
+            $continueX = [int]($screen.Width * 0.50)
+            $continueY = [int]($screen.Height * 0.716)
+            [void][LeStudioRunnerInput]::SetCursorPos($continueX, $continueY)
+            [LeStudioRunnerInput]::mouse_event(0x02, 0, 0, 0, [UIntPtr]::Zero)
+            [LeStudioRunnerInput]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
+            Note "QUICK_SETUP_CONTINUE_CLICK=$continueX,$continueY"
+            Start-Sleep -Seconds 4
+            $dismissX = [int]($screen.Width * 0.78)
+            $dismissY = [int]($screen.Height * 0.48)
+            [void][LeStudioRunnerInput]::SetCursorPos($dismissX, $dismissY)
+            [LeStudioRunnerInput]::mouse_event(0x02, 0, 0, 0, [UIntPtr]::Zero)
+            [LeStudioRunnerInput]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
+            Note "SPLASH_DISMISS_CLICK=$dismissX,$dismissY"
+            Start-Sleep -Seconds 4
+          }
 
           $bitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
           $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
