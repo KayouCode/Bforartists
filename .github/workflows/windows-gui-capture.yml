@@ -31,7 +31,7 @@ jobs:
           path: package-artifact
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
-          run-id: 43261331717
+          run-id: 43293655095
 
       - name: Deploy Mesa locally, verify OpenGL, and capture
         id: capture
@@ -44,7 +44,7 @@ jobs:
             "$(Get-Date -Format o) $message" | Tee-Object -FilePath $log -Append
           }
 
-          Note "PACKAGE_COMMIT=c30afec8a45027c311f8d7c5f87ffc6a0d29e9d9"
+          Note "PACKAGE_COMMIT=c0d0ba0fccc8681b82400fa53f33728867d00728"
           Note "CAPTURE_COMMIT=${{ github.sha }}"
           Note "MESA_SOURCE=https://github.com/pal1000/mesa-dist-win/releases/tag/26.2.6"
           Note "MESA_VARIANT=release-mingw"
@@ -286,30 +286,45 @@ jobs:
             Note "SPLASH_DISMISS_KEY=ESC"
             Start-Sleep -Seconds 4
 
+            $initial = Join-Path $PWD "capture\LeStudio_M10B_initial.png"
+            $initialBitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
+            $initialGraphics = [System.Drawing.Graphics]::FromImage($initialBitmap)
+            $initialGraphics.CopyFromScreen(0,0,0,0,$initialBitmap.Size)
+            $initialBitmap.Save($initial,[System.Drawing.Imaging.ImageFormat]::Png)
+            $initialGraphics.Dispose()
+            $initialBitmap.Dispose()
+            Note "INITIAL_CAPTURE_SHA256=$((Get-FileHash $initial -Algorithm SHA256).Hash)"
+
             $tabFailures = 0
             $tabs = @(
-              @{ Name = "Accueil"; X = 160 },
-              @{ Name = "Modélisation"; X = 260 },
-              @{ Name = "Sculpture"; X = 365 },
-              @{ Name = "Matériaux"; X = 452 },
-              @{ Name = "Rendu"; X = 535 },
-              @{ Name = "Animation"; X = 619 },
-              @{ Name = "Scripting"; X = 710 },
-              @{ Name = "Modélisation"; X = 260 }
+              @{ Name = "Accueil"; X = 180 },
+              @{ Name = "Modélisation"; X = 275 },
+              @{ Name = "Sculpture"; X = 377 },
+              @{ Name = "Matériaux"; X = 466 },
+              @{ Name = "Rendu"; X = 545 },
+              @{ Name = "Animation"; X = 635 },
+              @{ Name = "Scripting"; X = 720 },
+              @{ Name = "Modélisation"; X = 275 }
             )
             foreach ($tab in $tabs) {
               [void][LeStudioRunnerInput]::SetForegroundWindow($process.MainWindowHandle)
-              [void][LeStudioRunnerInput]::SetCursorPos([int]$tab.X, 36)
+              [void][LeStudioRunnerInput]::SetCursorPos([int]$tab.X, 39)
               [LeStudioRunnerInput]::mouse_event(0x02, 0, 0, 0, [UIntPtr]::Zero)
               [LeStudioRunnerInput]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
-              Start-Sleep -Seconds 6
               $eventsFile = Join-Path $PWD "capture\workspace-events.jsonl"
               $observed = $null
-              if (Test-Path -LiteralPath $eventsFile) {
-                $lastEvent = Get-Content -LiteralPath $eventsFile -Tail 1 | ConvertFrom-Json
-                $observed = $lastEvent.workspace
-              }
-              Note "TAB_CLICK_EXPECTED=$($tab.Name) OBSERVED=$observed X=$($tab.X) Y=36"
+              $observedObjects = $null
+              $timer = [System.Diagnostics.Stopwatch]::StartNew()
+              do {
+                Start-Sleep -Seconds 1
+                if (Test-Path -LiteralPath $eventsFile) {
+                  $lastEvent = Get-Content -LiteralPath $eventsFile -Tail 1 | ConvertFrom-Json
+                  $observed = $lastEvent.workspace
+                  $observedObjects = $lastEvent.objects
+                }
+              } while ($observed -ne $tab.Name -and $timer.Elapsed.TotalSeconds -lt 30)
+              $timer.Stop()
+              Note "TAB_CLICK_EXPECTED=$($tab.Name) OBSERVED=$observed OBJECTS=$observedObjects X=$($tab.X) Y=39 WAIT_MS=$($timer.ElapsedMilliseconds)"
               if ($observed -ne $tab.Name) { $tabFailures++ }
             }
             Note "TAB_FAILURES=$tabFailures"
