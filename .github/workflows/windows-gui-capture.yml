@@ -263,12 +263,9 @@ jobs:
             [LeStudioRunnerInput]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
             Note "QUICK_SETUP_CONTINUE_CLICK=$continueX,$continueY"
             Start-Sleep -Seconds 4
-            $dismissX = [int]($screen.Width * 0.78)
-            $dismissY = [int]($screen.Height * 0.48)
-            [void][LeStudioRunnerInput]::SetCursorPos($dismissX, $dismissY)
-            [LeStudioRunnerInput]::mouse_event(0x02, 0, 0, 0, [UIntPtr]::Zero)
-            [LeStudioRunnerInput]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
-            Note "SPLASH_DISMISS_CLICK=$dismissX,$dismissY"
+            [void][LeStudioRunnerInput]::SetForegroundWindow($process.MainWindowHandle)
+            [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
+            Note "SPLASH_DISMISS_KEY=ESC"
             Start-Sleep -Seconds 4
           }
 
