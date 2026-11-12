@@ -69,18 +69,131 @@ jobs:
           & "C:\Program Files\7-Zip\7z.exe" x -y "-omesa" $mesaArchive | Out-File $log -Append
           if ($LASTEXITCODE -ne 0) { Note "BLOCKED: Mesa extraction failed"; exit 5 }
 
-          $mesaDlls = @("opengl32.dll","libglapi.dll","libgallium_wgl.dll")
-          foreach ($name in $mesaDlls) {
-            $candidates = @(Get-ChildItem -LiteralPath (Join-Path $PWD "mesa") -Recurse -File -Filter $name |
-              Where-Object { $_.FullName -match '\\x64\\' })
-            if ($candidates.Count -ne 1) {
-              Note "BLOCKED: expected one x64 Mesa DLL named $name, found $($candidates.Count)"
-              exit 6
+          $mesaRoot = Join-Path $PWD "mesa"
+          $archiveTree = Join-Path $PWD "capture\mesa-archive-tree.txt"
+          & "C:\Program Files\7-Zip\7z.exe" l -slt $mesaArchive | Set-Content -LiteralPath $archiveTree
+          Note "MESA_ARCHIVE_TREE=$archiveTree"
+
+          function Get-PeMachine([string]$path) {
+            $stream = [System.IO.File]::Open($path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+            $reader = [System.IO.BinaryReader]::new($stream)
+            try {
+              $stream.Position = 0x3c
+              $peOffset = $reader.ReadInt32()
+              $stream.Position = $peOffset
+              if ($reader.ReadUInt32() -ne 0x00004550) { return "not-pe" }
+              $machine = $reader.ReadUInt16()
+              switch ($machine) {
+                0x8664 { return "x64" }
+                0x014c { return "x86" }
+                0xaa64 { return "arm64" }
+                default { return ("0x{0:X4}" -f $machine) }
+              }
             }
-            $source = $candidates[0].FullName
-            Copy-Item -LiteralPath $source -Destination (Join-Path (Split-Path $exe) $name)
-            Note "MESA_DLL=$name SOURCE=$source SHA256=$((Get-FileHash $source -Algorithm SHA256).Hash)"
+            finally {
+              $reader.Dispose()
+              $stream.Dispose()
+            }
           }
+
+          $allDlls = @(Get-ChildItem -LiteralPath $mesaRoot -Recurse -File -Filter "*.dll" | Sort-Object FullName)
+          $inventory = @()
+          foreach ($dll in $allDlls) {
+            $machine = Get-PeMachine $dll.FullName
+            $relative = [System.IO.Path]::GetRelativePath($mesaRoot, $dll.FullName)
+            $entry = [pscustomobject]@{
+              Name = $dll.Name
+              RelativePath = $relative
+              FullName = $dll.FullName
+              Machine = $machine
+              Bytes = $dll.Length
+              SHA256 = (Get-FileHash $dll.FullName -Algorithm SHA256).Hash
+            }
+            $inventory += $entry
+            Note "MESA_ARCHIVE_DLL=$relative MACHINE=$machine BYTES=$($dll.Length) SHA256=$($entry.SHA256)"
+          }
+          $inventory | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath "capture\mesa-dll-inventory.json"
+          Note "MESA_DLL_COUNT=$($inventory.Count)"
+          Note "MESA_X64_DLL_COUNT=$(@($inventory | Where-Object Machine -eq 'x64').Count)"
+
+          $openglCandidates = @($inventory | Where-Object { $_.Machine -eq "x64" -and $_.Name -ieq "opengl32.dll" })
+          if ($openglCandidates.Count -ne 1) {
+            Note "BLOCKED: expected exactly one x64 opengl32.dll after architecture inspection, found $($openglCandidates.Count)"
+            $openglCandidates | Format-List * | Out-File "capture\opengl-candidates.txt"
+            exit 6
+          }
+
+          $vswhere = Join-Path ([Environment]::GetFolderPath("ProgramFilesX86")) "Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path -LiteralPath $vswhere)) {
+            Note "BLOCKED: Visual Studio dependency inspector unavailable"
+            exit 10
+          }
+          $dumpbin = @(& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find "VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe") | Select-Object -First 1
+          if (-not $dumpbin -or -not (Test-Path -LiteralPath $dumpbin)) {
+            Note "BLOCKED: dumpbin dependency inspector unavailable"
+            exit 10
+          }
+          Note "DEPENDENCY_INSPECTOR=$dumpbin"
+
+          $x64ByName = @{}
+          foreach ($item in @($inventory | Where-Object Machine -eq "x64")) {
+            $key = $item.Name.ToLowerInvariant()
+            if (-not $x64ByName.ContainsKey($key)) { $x64ByName[$key] = @() }
+            $x64ByName[$key] += $item
+          }
+
+          $dependencyReport = Join-Path $PWD "capture\mesa-dependencies.txt"
+          $selected = @{}
+          $queue = [System.Collections.Generic.Queue[object]]::new()
+          $queue.Enqueue($openglCandidates[0])
+          while ($queue.Count -gt 0) {
+            $item = $queue.Dequeue()
+            $key = $item.Name.ToLowerInvariant()
+            if ($selected.ContainsKey($key)) { continue }
+            $selected[$key] = $item
+
+            "===== $($item.RelativePath) =====" | Add-Content -LiteralPath $dependencyReport
+            $dependOutput = @(& $dumpbin /DEPENDENTS $item.FullName 2>&1)
+            $dependOutput | Add-Content -LiteralPath $dependencyReport
+            if ($LASTEXITCODE -ne 0) {
+              Note "BLOCKED: dependency inspection failed for $($item.RelativePath)"
+              exit 11
+            }
+            foreach ($line in $dependOutput) {
+              if ([string]$line -match '^\s*([A-Za-z0-9_.+-]+\.dll)\s*$') {
+                $dependencyName = $Matches[1].ToLowerInvariant()
+                if ($x64ByName.ContainsKey($dependencyName)) {
+                  $matches = @($x64ByName[$dependencyName])
+                  if ($matches.Count -ne 1) {
+                    Note "BLOCKED: ambiguous x64 Mesa dependency $dependencyName count=$($matches.Count)"
+                    exit 12
+                  }
+                  if (-not $selected.ContainsKey($dependencyName)) { $queue.Enqueue($matches[0]) }
+                }
+              }
+            }
+          }
+
+          if ($selected.ContainsKey("libglapi.dll")) {
+            Note "MESA_LIBGLAPI=present-and-required"
+          }
+          else {
+            Note "MESA_LIBGLAPI=absent-or-not-required"
+          }
+          if ($selected.ContainsKey("libgallium_wgl.dll")) {
+            Note "MESA_GALLIUM_WGL=required"
+          }
+          else {
+            Note "MESA_GALLIUM_WGL=not-imported-by-selected-opengl32"
+          }
+
+          foreach ($item in $selected.Values) {
+            $destination = Join-Path (Split-Path $exe) $item.Name
+            Copy-Item -LiteralPath $item.FullName -Destination $destination -Force
+            Note "MESA_DEPLOYED=$($item.Name) SOURCE=$($item.RelativePath) SHA256=$($item.SHA256)"
+          }
+          "Mesa3D application-local deployment" | Set-Content -LiteralPath "$exe.local"
+          Note "MESA_APPLICATION_LOCAL_MARKER=$exe.local"
           Invoke-WebRequest -Uri "https://raw.githubusercontent.com/pal1000/mesa-dist-win/26.2.6/LICENSE" -OutFile "capture\MESA_LICENSE.txt"
 
           $env:GALLIUM_DRIVER = "llvmpipe"
