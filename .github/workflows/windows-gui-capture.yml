@@ -227,7 +227,21 @@ jobs:
               print("LESTUDIO_GUI_OPENGL", json.dumps(result, sort_keys=True), flush=True)
               return None
 
+          def record_workspace():
+              try:
+                  window = bpy.context.window
+                  with open(os.path.join(os.getcwd(), "capture", "workspace-events.jsonl"), "a", encoding="utf-8") as handle:
+                      handle.write(json.dumps({
+                          "workspace": window.workspace.name if window else None,
+                          "scene": window.scene.name if window else None,
+                          "objects": len(window.scene.objects) if window else None,
+                      }, ensure_ascii=False) + "\n")
+              except Exception:
+                  traceback.print_exc()
+              return 0.5
+
           bpy.app.timers.register(inspect_gui, first_interval=2.0)
+          bpy.app.timers.register(record_workspace, first_interval=0.5)
           '@ | Set-Content -LiteralPath $probe
 
           Add-Type -AssemblyName System.Windows.Forms
@@ -271,6 +285,34 @@ jobs:
             [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
             Note "SPLASH_DISMISS_KEY=ESC"
             Start-Sleep -Seconds 4
+
+            $tabFailures = 0
+            $tabs = @(
+              @{ Name = "Accueil"; X = 160 },
+              @{ Name = "Modélisation"; X = 260 },
+              @{ Name = "Sculpture"; X = 365 },
+              @{ Name = "Matériaux"; X = 452 },
+              @{ Name = "Rendu"; X = 535 },
+              @{ Name = "Animation"; X = 619 },
+              @{ Name = "Scripting"; X = 710 },
+              @{ Name = "Modélisation"; X = 260 }
+            )
+            foreach ($tab in $tabs) {
+              [void][LeStudioRunnerInput]::SetForegroundWindow($process.MainWindowHandle)
+              [void][LeStudioRunnerInput]::SetCursorPos([int]$tab.X, 36)
+              [LeStudioRunnerInput]::mouse_event(0x02, 0, 0, 0, [UIntPtr]::Zero)
+              [LeStudioRunnerInput]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
+              Start-Sleep -Seconds 2
+              $eventsFile = Join-Path $PWD "capture\workspace-events.jsonl"
+              $observed = $null
+              if (Test-Path -LiteralPath $eventsFile) {
+                $lastEvent = Get-Content -LiteralPath $eventsFile -Tail 1 | ConvertFrom-Json
+                $observed = $lastEvent.workspace
+              }
+              Note "TAB_CLICK_EXPECTED=$($tab.Name) OBSERVED=$observed X=$($tab.X) Y=36"
+              if ($observed -ne $tab.Name) { $tabFailures++ }
+            }
+            Note "TAB_FAILURES=$tabFailures"
           }
 
           $bitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
@@ -321,6 +363,7 @@ jobs:
             Note "CAPTURE_CANDIDATE=$png"
           }
           Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          if ($tabFailures -gt 0) { Note "BLOCKED: one or more workspace tab clicks failed"; exit 13 }
 
       - name: Record diagnostic status
         if: always()
