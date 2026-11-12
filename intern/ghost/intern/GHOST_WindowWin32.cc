@@ -71,6 +71,7 @@ GHOST_WindowWin32::GHOST_WindowWin32(GHOST_SystemWin32 *system,
       h_wnd_(0),
       h_DC_(0),
       is_dialog_(dialog),
+      custom_frame_enabled_(false),
       preferred_device_(preferred_device),
       has_mouse_captured_(false),
       has_grab_mouse_(false),
@@ -174,6 +175,10 @@ GHOST_WindowWin32::GHOST_WindowWin32(GHOST_SystemWin32 *system,
 
   /* Store a pointer to this class in the window structure. */
   ::SetWindowLongPtr(h_wnd_, GWLP_USERDATA, (LONG_PTR)this);
+
+  /* Keep WS_CAPTION and the system menu. DWM can then own the caption buttons while
+   * the LeStudio header occupies the client area. On failure the native frame remains. */
+  refreshCustomFrame();
 
   if (!system_->window_focus_) {
     /* If we don't want focus then lower to bottom. */
@@ -364,6 +369,35 @@ bool GHOST_WindowWin32::getValid() const
 HWND GHOST_WindowWin32::getHWND() const
 {
   return h_wnd_;
+}
+
+bool GHOST_WindowWin32::usesCustomFrame() const
+{
+  return custom_frame_enabled_;
+}
+
+void GHOST_WindowWin32::refreshCustomFrame()
+{
+  if (!h_wnd_ || is_dialog_ || parent_window_hwnd_ != HWND_DESKTOP) {
+    return;
+  }
+
+  BOOL composition_enabled = FALSE;
+  bool available = SUCCEEDED(DwmIsCompositionEnabled(&composition_enabled)) &&
+                   composition_enabled != FALSE;
+  if (available) {
+    const int caption_height = std::max(1, MulDiv(32, getDPIHint(), USER_DEFAULT_SCREEN_DPI));
+    const MARGINS margins = {0, 0, caption_height, 0};
+    available = SUCCEEDED(DwmExtendFrameIntoClientArea(h_wnd_, &margins));
+  }
+
+  if (custom_frame_enabled_ != available) {
+    custom_frame_enabled_ = available;
+    /* Recalculate the non-client area immediately; a failed DWM setup restores
+     * the ordinary Windows caption rather than leaving a borderless window. */
+    ::SetWindowPos(h_wnd_, nullptr, 0, 0, 0, 0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+  }
 }
 
 void *GHOST_WindowWin32::getOSWindow() const

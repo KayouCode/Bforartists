@@ -6,6 +6,7 @@
  * \ingroup GHOST
  */
 
+#include <algorithm>
 #include <limits>
 #include <map>
 
@@ -1659,6 +1660,65 @@ LRESULT WINAPI GHOST_SystemWin32::s_wndProc(HWND hwnd, uint msg, WPARAM wParam, 
 
     GHOST_WindowWin32 *window = (GHOST_WindowWin32 *)::GetWindowLongPtr(hwnd, GWLP_USERDATA);
     if (window) {
+      if (msg == WM_DWMCOMPOSITIONCHANGED) {
+        window->refreshCustomFrame();
+      }
+      if (window->usesCustomFrame() &&
+          (::GetWindowLongPtr(hwnd, GWL_STYLE) & WS_CAPTION) != 0)
+      {
+        LRESULT dwm_result = 0;
+        if (::DwmDefWindowProc(hwnd, msg, wParam, lParam, &dwm_result)) {
+          return dwm_result;
+        }
+        if (msg == WM_NCCALCSIZE && wParam) {
+          /* Keep the full client area for the LeStudio header. Maximized windows
+           * must still honor the monitor work area and its taskbar. */
+          if (::IsZoomed(hwnd)) {
+            MONITORINFO monitor_info = {sizeof(MONITORINFO)};
+            if (::GetMonitorInfoW(::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST),
+                                  &monitor_info))
+            {
+              reinterpret_cast<NCCALCSIZE_PARAMS *>(lParam)->rgrc[0] = monitor_info.rcWork;
+            }
+          }
+          return 0;
+        }
+        if (msg == WM_NCHITTEST) {
+          RECT window_rect;
+          ::GetWindowRect(hwnd, &window_rect);
+          const int x = GET_X_LPARAM(lParam);
+          const int y = GET_Y_LPARAM(lParam);
+          const int border = std::max(5, ::GetSystemMetrics(SM_CXSIZEFRAME) +
+                                           ::GetSystemMetrics(SM_CXPADDEDBORDER));
+          if (!::IsZoomed(hwnd)) {
+            const bool left = x < window_rect.left + border;
+            const bool right = x >= window_rect.right - border;
+            const bool top = y < window_rect.top + border;
+            const bool bottom = y >= window_rect.bottom - border;
+            if (top && left) return HTTOPLEFT;
+            if (top && right) return HTTOPRIGHT;
+            if (bottom && left) return HTBOTTOMLEFT;
+            if (bottom && right) return HTBOTTOMRIGHT;
+            if (left) return HTLEFT;
+            if (right) return HTRIGHT;
+            if (top) return HTTOP;
+            if (bottom) return HTBOTTOM;
+          }
+          /* Use the empty stretch between the fixed workspace tabs and the
+           * reserved caption/LeStudio controls. Never claim the tab hit boxes. */
+          const int dpi = window->getDPIHint();
+          const int controls_start = window_rect.right -
+                                     MulDiv(138, dpi, USER_DEFAULT_SCREEN_DPI) -
+                                     MulDiv(95, dpi, USER_DEFAULT_SCREEN_DPI);
+          if (y < window_rect.top + MulDiv(32, dpi, USER_DEFAULT_SCREEN_DPI) &&
+              x > window_rect.left + MulDiv(770, dpi, USER_DEFAULT_SCREEN_DPI) &&
+              x < controls_start)
+          {
+            return HTCAPTION;
+          }
+          return HTCLIENT;
+        }
+      }
       switch (msg) {
         /* We need to check if new key layout has AltGr. */
         case WM_INPUTLANGCHANGE: {
@@ -2136,6 +2196,7 @@ LRESULT WINAPI GHOST_SystemWin32::s_wndProc(HWND hwnd, uint msg, WPARAM wParam, 
           break;
         }
         case WM_ACTIVATE: {
+          window->refreshCustomFrame();
           /* The WM_ACTIVATE message is sent to both the window being activated and the window
            * being deactivated. If the windows use the same input queue, the message is sent
            * synchronously, first to the window procedure of the top-level window being

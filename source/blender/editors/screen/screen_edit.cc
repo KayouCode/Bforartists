@@ -1336,6 +1336,11 @@ static void screen_global_topbar_area_refresh(wmWindow *win, bScreen *screen)
   /* Use content rect to account for CSD, converted to inclusive bounds for area geometry. */
   WM_window_rect_calc(win, &rect);
   rect.xmax -= 1;
+#ifdef WIN32
+  /* Reserve DWM's three caption buttons without changing LeStudio's controls.
+   * The native-frame fallback merely leaves this small right-hand margin free. */
+  rect.xmax -= int(138.0f * UI_SCALE_FAC);
+#endif
   rect.ymin = (rect.ymax - 1) - size;
   rect.ymax -= 1;
 

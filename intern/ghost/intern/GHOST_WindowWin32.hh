@@ -107,6 +107,10 @@ class GHOST_WindowWin32 : public GHOST_Window {
    */
   HWND getHWND() const;
 
+  /** Integrated title bar is enabled only while DWM composition is available. */
+  bool usesCustomFrame() const;
+  void refreshCustomFrame();
+
   /**
    * Returns the handle of the window.
    * \return The handle of the window.
@@ -378,6 +382,7 @@ class GHOST_WindowWin32 : public GHOST_Window {
   HDC h_DC_;
 
   bool is_dialog_;
+  bool custom_frame_enabled_;
   GHOST_GPUDevice preferred_device_;
 
   /** Flag for if window has captured the mouse. */
