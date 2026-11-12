@@ -2868,6 +2868,10 @@ static void widget_draw_text_icon(const uiFontStyle *fstyle,
   }
 
   const uchar *icon_color = (but->col[3] != 0) ? but->col : wcol->text;
+  const uchar lestudio_gold[4] = {212, 175, 55, 255};
+  if ((but->drawflag & BUT_LESTUDIO_TAB) && (but->flag & (UI_SELECT | UI_SELECT_DRAW))) {
+    icon_color = lestudio_gold;
+  }
 
   /* If there's an icon too (made with uiDefIconTextBut) then draw the icon
    * and offset the text label to accommodate it */
@@ -2927,7 +2931,8 @@ static void widget_draw_text_icon(const uiFontStyle *fstyle,
     const bool is_hold_popup = (but->block->flag & BLOCK_POPUP_HOLD) != 0;
     const bool is_toolbar_tool = is_tool && (is_static_toolbar || is_popover || is_pie || is_hold_popup);
     const int icon_size_init = is_toolbar_tool ? ICON_DEFAULT_HEIGHT_TOOLBAR : ICON_DEFAULT_HEIGHT;
-    const float icon_size = icon_size_init / (but->block->aspect * UI_INV_SCALE_FAC);
+    const float icon_size = icon_size_init / (but->block->aspect * UI_INV_SCALE_FAC) *
+                            (but->icon == ICON_LESTUDIO_LOGO ? but->icon_scale : 1.0f);
     const float icon_padding = 2 * UI_SCALE_FAC;
 
 #ifdef USE_UI_TOOLBAR_HACK
@@ -5204,6 +5209,17 @@ static void widget_tab(Button *but,
   widgetbase_draw_cache_flush();
   GPU_blend(GPU_BLEND_NONE);
 
+  if (is_active && (but->drawflag & BUT_LESTUDIO_TAB)) {
+    rctf underline;
+    BLI_rctf_rcti_copy(&underline, rect);
+    underline.xmin += 4.0f * UI_SCALE_FAC;
+    underline.xmax -= 4.0f * UI_SCALE_FAC;
+    underline.ymin += UI_SCALE_FAC;
+    underline.ymax = underline.ymin + 2.0f * UI_SCALE_FAC;
+    const float gold[4] = {212.0f / 255.0f, 175.0f / 255.0f, 55.0f / 255.0f, 1.0f};
+    draw_roundbox_4fv(&underline, true, UI_SCALE_FAC, gold);
+  }
+
 #ifdef USE_TAB_SHADED_HIGHLIGHT
   /* draw outline (3d look) */
   draw_but_TAB_outline(rect, rad, theme_col_tab_highlight, wcol->inner);
@@ -5538,6 +5554,14 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
   bTheme *btheme = theme::theme_get();
   const ThemeUI *tui = &btheme->tui;
   const uiFontStyle *fstyle = &style->widget;
+  uiFontStyle lestudio_brand_font;
+  if (but->type == ButtonType::Label && but->icon == ICON_LESTUDIO_LOGO) {
+    lestudio_brand_font = *fstyle;
+    lestudio_brand_font.points *= 1.4f;
+    lestudio_brand_font.character_weight = 650;
+    fstyle = &lestudio_brand_font;
+    but->icon_scale = 1.35f;
+  }
   WidgetType *wt = nullptr;
 
   /* handle menus separately */
@@ -5836,7 +5860,7 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
     /* Anthracite inactive tabs, gold selected tab, matching the approved
      * LeStudio header without changing tabs elsewhere in Bforartists. */
     const uchar inner[4] = {24, 25, 27, 255};
-    const uchar inner_sel[4] = {112, 72, 5, 255};
+    const uchar inner_sel[4] = {112, 76, 17, 255};
     const uchar outline[4] = {30, 31, 33, 255};
     const uchar outline_sel[4] = {212, 175, 55, 255};
     const uchar text[4] = {225, 225, 225, 255};
@@ -5847,6 +5871,10 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
     copy_v4_v4_uchar(lestudio_colors.outline_sel, outline_sel);
     copy_v4_v4_uchar(lestudio_colors.text, text);
     copy_v4_v4_uchar(lestudio_colors.text_sel, text_sel);
+    lestudio_colors.shaded = 1;
+    lestudio_colors.shadetop = -6;
+    lestudio_colors.shadedown = 8;
+    lestudio_colors.roundness = 0.32f;
     lestudio_wt.wcol_theme = &lestudio_colors;
     wt = &lestudio_wt;
   }

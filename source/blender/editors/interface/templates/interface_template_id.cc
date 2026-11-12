@@ -1468,7 +1468,7 @@ static void template_ID_tabs(const bContext *C,
        ELEM(RGN_ALIGN_ENUM_FROM_MASK(region->alignment), RGN_ALIGN_TOP, RGN_ALIGN_BOTTOM));
   const int but_align = horizontal ? 0 : button_align_opposite_to_area_align_get(region);
 
-  const int but_height = UI_UNIT_Y * 1.1;
+  int but_height = UI_UNIT_Y * 1.1f;
 
   Block *block = layout.block();
   const uiStyle *style = style_get_dpi();
@@ -1476,28 +1476,31 @@ static void template_ID_tabs(const bContext *C,
   const bool lestudio_workspace_tabs =
       (RNA_type_to_ID_code(type) == ID_WS && CTX_wm_area(C) &&
        CTX_wm_area(C)->spacetype == SPACE_TOPBAR);
+  if (lestudio_workspace_tabs) {
+    but_height = UI_UNIT_Y * 1.2f;
+  }
 
   const auto workspace_icon = [](const char *name) {
     if (STREQ(name, "Accueil")) {
-      return ICON_HOME;
+      return ICON_LESTUDIO_HOME;
     }
     if (STREQ(name, "Modélisation")) {
-      return ICON_MESH_CUBE;
+      return ICON_LESTUDIO_MODEL;
     }
     if (STREQ(name, "Sculpture")) {
-      return ICON_SCULPTMODE_HLT;
+      return ICON_LESTUDIO_SCULPT;
     }
     if (STREQ(name, "Matériaux")) {
-      return ICON_MATERIAL;
+      return ICON_LESTUDIO_MATERIAL;
     }
     if (STREQ(name, "Rendu")) {
-      return ICON_RENDER_STILL;
+      return ICON_LESTUDIO_RENDER;
     }
     if (STREQ(name, "Animation")) {
-      return ICON_ANIM_DATA;
+      return ICON_LESTUDIO_ANIMATE;
     }
     if (STREQ(name, "Scripting")) {
-      return ICON_SCRIPT;
+      return ICON_LESTUDIO_SCRIPT;
     }
     return ICON_NONE;
   };

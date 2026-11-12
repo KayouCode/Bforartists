@@ -1669,7 +1669,9 @@ static void region_rect_recursive(
   int prefsizey;
 
   if (region->regiontype == RGN_TYPE_HEADER) {
-    prefsizey = ED_area_headersize();
+    prefsizey = (area->spacetype == SPACE_TOPBAR) ?
+                    int(ceilf(ED_area_headersize() * 1.25f)) :
+                    ED_area_headersize();
   }
   else if (region->regiontype == RGN_TYPE_TOOL_HEADER) {
     prefsizey = ED_area_headersize();

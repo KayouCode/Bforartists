@@ -1328,8 +1328,8 @@ static int screen_global_header_size()
 // BFA Top Toolbar */
 static void screen_global_topbar_area_refresh(wmWindow *win, bScreen *screen)
 {
-  const short size_min = screen_global_header_size();
-  const short size_max = size_min * 2.15;
+  const short size_min = short(ceilf(screen_global_header_size() * 1.25f));
+  const short size_max = short(screen_global_header_size() * 2.15f);
   const short size = (screen->flag & SCREEN_BFA_TOP_BAR) ? size_min : size_max;
   rcti rect;
 

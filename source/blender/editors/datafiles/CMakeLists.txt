@@ -208,6 +208,16 @@ if(WITH_BLENDER)
       # ------------------------- icons --------------------------*/
       none # never change, needs to stay on top of the list!
       lestudio_logo
+      lestudio_home
+      lestudio_model
+      lestudio_sculpt
+      lestudio_material
+      lestudio_render
+      lestudio_animate
+      lestudio_script
+      lestudio_bell
+      lestudio_help
+      lestudio_user
 
       # letter def icon
       anim
