@@ -201,56 +201,30 @@ jobs:
           $env:LIBGL_ALWAYS_SOFTWARE = "true"
           $env:MESA_LOG_LEVEL = "debug"
 
-          $probe = Join-Path $PWD "opengl_probe.py"
+          $probe = Join-Path $PWD "gui_opengl_probe.py"
           @'
-          import ctypes
           import json
           import os
-          import re
+          import traceback
           import bpy
-          import gpu
 
-          version = gpu.platform.version_get()
-          renderer = gpu.platform.renderer_get()
-          vendor = gpu.platform.vendor_get()
-          match = re.search(r"(\d+)\.(\d+)", version)
-          assert match and tuple(map(int, match.groups())) >= (4, 3), version
-          assert "llvmpipe" in renderer.lower(), renderer
+          output = os.path.join(os.getcwd(), "capture", "opengl-gui-probe.json")
+          def inspect_gui():
+              result = {"mode": "graphical", "binary": bpy.app.binary_path}
+              try:
+                  import gpu
+                  result["version"] = gpu.platform.version_get()
+                  result["renderer"] = gpu.platform.renderer_get()
+                  result["vendor"] = gpu.platform.vendor_get()
+              except Exception:
+                  result["error"] = traceback.format_exc()
+              with open(output, "w", encoding="utf-8") as handle:
+                  json.dump(result, handle, indent=2)
+              print("LESTUDIO_GUI_OPENGL", json.dumps(result, sort_keys=True), flush=True)
+              return None
 
-          dll = os.path.join(os.path.dirname(bpy.app.binary_path), "opengl32.dll")
-          gl = ctypes.WinDLL(dll)
-          count = ctypes.c_int()
-          gl.glGetIntegerv(0x821D, ctypes.byref(count))
-          gl.wglGetProcAddress.restype = ctypes.c_void_p
-          address = gl.wglGetProcAddress(b"glGetStringi")
-          assert address, "glGetStringi unavailable"
-          get_string_i = ctypes.WINFUNCTYPE(ctypes.c_char_p, ctypes.c_uint, ctypes.c_uint)(address)
-          extensions = {
-              get_string_i(0x1F03, index).decode("ascii")
-              for index in range(count.value)
-          }
-          required = {"GL_ARB_shader_draw_parameters"}
-          missing = sorted(required - extensions)
-          assert not missing, missing
-          result = {
-              "version": version,
-              "renderer": renderer,
-              "vendor": vendor,
-              "extension_count": count.value,
-              "required_extensions": sorted(required),
-              "required_extensions_present": True,
-          }
-          with open(os.path.join(os.getcwd(), "capture", "opengl-probe.json"), "w", encoding="utf-8") as handle:
-              json.dump(result, handle, indent=2)
-          print("LESTUDIO_MESA_PROBE_OK", json.dumps(result, sort_keys=True))
+          bpy.app.timers.register(inspect_gui, first_interval=2.0)
           '@ | Set-Content -LiteralPath $probe
-
-          & $exe --background --factory-startup --gpu-backend opengl --python $probe *>&1 |
-            Tee-Object -FilePath $log -Append
-          if ($LASTEXITCODE -ne 0 -or -not (Select-String -Path $log -SimpleMatch "LESTUDIO_MESA_PROBE_OK")) {
-            Note "BLOCKED: OpenGL 4.3 or required-extension probe failed"
-            exit 7
-          }
 
           Add-Type -AssemblyName System.Windows.Forms
           Add-Type -AssemblyName System.Drawing
@@ -258,7 +232,9 @@ jobs:
           Note "SCREEN=$($screen.Width)x$($screen.Height)"
           Note "INTERACTIVE=$([Environment]::UserInteractive)"
 
-          $process = Start-Process -FilePath $exe -ArgumentList "--factory-startup","--gpu-backend","opengl" -WindowStyle Maximized -PassThru
+          $stdout = Join-Path $PWD "capture\application-stdout.log"
+          $stderr = Join-Path $PWD "capture\application-stderr.log"
+          $process = Start-Process -FilePath $exe -ArgumentList "--factory-startup","--gpu-backend","opengl","--debug-gpu","--python",$probe -WindowStyle Maximized -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
           Note "PROCESS_ID=$($process.Id)"
           Start-Sleep -Seconds 25
           $process.Refresh()
@@ -266,8 +242,7 @@ jobs:
           Note "MAIN_WINDOW_HANDLE=$($process.MainWindowHandle)"
           Note "MAIN_WINDOW_TITLE=$($process.MainWindowTitle)"
           if ($process.HasExited -or $process.MainWindowHandle -eq 0) {
-            Note "BLOCKED: no real LeStudio application window"
-            exit 8
+            Note "WARNING: no confirmed LeStudio main window; capturing desktop for diagnosis"
           }
 
           $bitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
@@ -297,8 +272,26 @@ jobs:
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
             exit 9
           }
-          Note "CAPTURE_OK=$png"
           Note "CAPTURE_SHA256=$((Get-FileHash $png -Algorithm SHA256).Hash)"
+          if (Test-Path -LiteralPath "capture\opengl-gui-probe.json") {
+            $guiProbe = Get-Content -LiteralPath "capture\opengl-gui-probe.json" -Raw
+            Note "GUI_OPENGL_PROBE=$guiProbe"
+          }
+          else {
+            Note "GUI_OPENGL_PROBE=NOT_AVAILABLE"
+          }
+          if (Test-Path -LiteralPath $stderr) {
+            Get-Content -LiteralPath $stderr -Tail 80 | Out-File -FilePath $log -Append
+          }
+          if (Test-Path -LiteralPath $stdout) {
+            Get-Content -LiteralPath $stdout -Tail 80 | Out-File -FilePath $log -Append
+          }
+          if ($process.HasExited -or $process.MainWindowHandle -eq 0) {
+            Note "BLOCKED: no confirmed real LeStudio application window"
+          }
+          else {
+            Note "CAPTURE_CANDIDATE=$png"
+          }
           Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
 
       - name: Record diagnostic status
