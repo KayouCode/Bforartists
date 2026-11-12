@@ -36,7 +36,6 @@ jobs:
       - name: Deploy Mesa locally, verify OpenGL, and capture
         id: capture
         shell: pwsh
-        continue-on-error: true
         run: |
           New-Item -ItemType Directory -Force capture | Out-Null
           $log = Join-Path $PWD "capture\launch-and-capture.log"
@@ -269,6 +268,7 @@ jobs:
           public static class LeStudioRunnerInput {
             [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
             [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+            [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
             [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extraInfo);
           }
           '@
@@ -307,10 +307,15 @@ jobs:
               @{ Name = "Modélisation"; X = 275 }
             )
             foreach ($tab in $tabs) {
-              [void][LeStudioRunnerInput]::SetForegroundWindow($process.MainWindowHandle)
+              $focus = [LeStudioRunnerInput]::SetForegroundWindow($process.MainWindowHandle)
+              Start-Sleep -Milliseconds 300
+              $foregroundHandle = [LeStudioRunnerInput]::GetForegroundWindow()
               [void][LeStudioRunnerInput]::SetCursorPos([int]$tab.X, 39)
+              Start-Sleep -Milliseconds 150
               [LeStudioRunnerInput]::mouse_event(0x02, 0, 0, 0, [UIntPtr]::Zero)
+              Start-Sleep -Milliseconds 150
               [LeStudioRunnerInput]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
+              Note "TAB_INPUT=$($tab.Name) FOCUS=$focus FOREGROUND=$foregroundHandle TARGET=$($process.MainWindowHandle)"
               $eventsFile = Join-Path $PWD "capture\workspace-events.jsonl"
               $observed = $null
               $observedObjects = $null
