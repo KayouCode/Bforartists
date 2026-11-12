@@ -1,4 +1,4 @@
-name: LeStudio real GUI capture diagnostic
+name: LeStudio Mesa LLVMpipe GUI capture
 
 on:
   push:
@@ -29,7 +29,7 @@ jobs:
           repository: ${{ github.repository }}
           run-id: 42844350661
 
-      - name: Attempt real graphical launch and capture
+      - name: Deploy Mesa locally, verify OpenGL, and capture
         id: capture
         shell: pwsh
         continue-on-error: true
@@ -37,32 +37,100 @@ jobs:
           New-Item -ItemType Directory -Force capture | Out-Null
           $log = Join-Path $PWD "capture\launch-and-capture.log"
           function Note([string]$message) {
-            $line = "$(Get-Date -Format o) $message"
-            $line | Tee-Object -FilePath $log -Append
+            "$(Get-Date -Format o) $message" | Tee-Object -FilePath $log -Append
           }
 
           Note "PACKAGE_COMMIT=b0940a3da76013c5c879f27fb6509a816559b6f2"
           Note "CAPTURE_COMMIT=${{ github.sha }}"
+          Note "MESA_SOURCE=https://github.com/pal1000/mesa-dist-win/releases/tag/26.2.6"
+          Note "MESA_LICENSE=MIT"
           Note "RUNNER_NAME=$env:RUNNER_NAME"
-          Note "SESSIONNAME=$env:SESSIONNAME"
           (query user 2>&1 | Out-String) | Tee-Object -FilePath $log -Append
 
           $outer = Get-ChildItem package-artifact -Filter "LeStudio-Windows-*.zip" -File
-          if ($outer.Count -ne 1) {
-            Note "BLOCKED: expected one complete package archive, found $($outer.Count)"
-            exit 2
-          }
-
-          $packageHash = (Get-FileHash $outer.FullName -Algorithm SHA256).Hash
-          Note "PACKAGE_PATH=$($outer.FullName)"
+          if ($outer.Count -ne 1) { Note "BLOCKED: complete package archive missing"; exit 2 }
           Note "PACKAGE_BYTES=$($outer.Length)"
-          Note "PACKAGE_SHA256=$packageHash"
-
+          Note "PACKAGE_SHA256=$((Get-FileHash $outer.FullName -Algorithm SHA256).Hash)"
           Expand-Archive -LiteralPath $outer.FullName -DestinationPath extracted -Force
+
           $exe = Join-Path $PWD "extracted\bforartists.exe"
-          if (-not (Test-Path -LiteralPath $exe)) {
-            Note "BLOCKED: bforartists.exe missing after extraction"
-            exit 3
+          if (-not (Test-Path -LiteralPath $exe)) { Note "BLOCKED: executable missing"; exit 3 }
+
+          $mesaVersion = "26.2.6"
+          $mesaArchive = Join-Path $PWD "mesa3d-$mesaVersion-release-msvc.7z"
+          $mesaUrl = "https://github.com/pal1000/mesa-dist-win/releases/download/$mesaVersion/mesa3d-$mesaVersion-release-msvc.7z"
+          Invoke-WebRequest -Uri $mesaUrl -OutFile $mesaArchive
+          $mesaHash = (Get-FileHash $mesaArchive -Algorithm SHA256).Hash
+          Note "MESA_ARCHIVE_SHA256=$mesaHash"
+          if ($mesaHash -ne "B2E00615FEABA45942343C265CC8C5F576142CA682C1AC6661922D4B72492877") {
+            Note "BLOCKED: Mesa archive hash mismatch"
+            exit 4
+          }
+          & "C:\Program Files\7-Zip\7z.exe" x -y "-omesa" $mesaArchive | Out-File $log -Append
+          if ($LASTEXITCODE -ne 0) { Note "BLOCKED: Mesa extraction failed"; exit 5 }
+
+          $mesaDlls = @("opengl32.dll","libglapi.dll","libgallium_wgl.dll")
+          foreach ($name in $mesaDlls) {
+            $source = Join-Path $PWD "mesa\x64\$name"
+            if (-not (Test-Path -LiteralPath $source)) { Note "BLOCKED: Mesa DLL missing: $name"; exit 6 }
+            Copy-Item -LiteralPath $source -Destination (Join-Path (Split-Path $exe) $name)
+            Note "MESA_DLL=$name SHA256=$((Get-FileHash $source -Algorithm SHA256).Hash)"
+          }
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/pal1000/mesa-dist-win/26.2.6/LICENSE" -OutFile "capture\MESA_LICENSE.txt"
+
+          $env:GALLIUM_DRIVER = "llvmpipe"
+          $env:LIBGL_ALWAYS_SOFTWARE = "true"
+          $env:MESA_LOG_LEVEL = "debug"
+
+          $probe = Join-Path $PWD "opengl_probe.py"
+          @'
+          import ctypes
+          import json
+          import os
+          import re
+          import bpy
+          import gpu
+
+          version = gpu.platform.version_get()
+          renderer = gpu.platform.renderer_get()
+          vendor = gpu.platform.vendor_get()
+          match = re.search(r"(\d+)\.(\d+)", version)
+          assert match and tuple(map(int, match.groups())) >= (4, 3), version
+          assert "llvmpipe" in renderer.lower(), renderer
+
+          dll = os.path.join(os.path.dirname(bpy.app.binary_path), "opengl32.dll")
+          gl = ctypes.WinDLL(dll)
+          count = ctypes.c_int()
+          gl.glGetIntegerv(0x821D, ctypes.byref(count))
+          gl.wglGetProcAddress.restype = ctypes.c_void_p
+          address = gl.wglGetProcAddress(b"glGetStringi")
+          assert address, "glGetStringi unavailable"
+          get_string_i = ctypes.WINFUNCTYPE(ctypes.c_char_p, ctypes.c_uint, ctypes.c_uint)(address)
+          extensions = {
+              get_string_i(0x1F03, index).decode("ascii")
+              for index in range(count.value)
+          }
+          required = {"GL_ARB_shader_draw_parameters"}
+          missing = sorted(required - extensions)
+          assert not missing, missing
+          result = {
+              "version": version,
+              "renderer": renderer,
+              "vendor": vendor,
+              "extension_count": count.value,
+              "required_extensions": sorted(required),
+              "required_extensions_present": True,
+          }
+          with open(os.path.join(os.getcwd(), "capture", "opengl-probe.json"), "w", encoding="utf-8") as handle:
+              json.dump(result, handle, indent=2)
+          print("LESTUDIO_MESA_PROBE_OK", json.dumps(result, sort_keys=True))
+          '@ | Set-Content -LiteralPath $probe
+
+          & $exe --background --factory-startup --gpu-backend opengl --python $probe *>&1 |
+            Tee-Object -FilePath $log -Append
+          if ($LASTEXITCODE -ne 0 -or -not (Select-String -Path $log -SimpleMatch "LESTUDIO_MESA_PROBE_OK")) {
+            Note "BLOCKED: OpenGL 4.3 or required-extension probe failed"
+            exit 7
           }
 
           Add-Type -AssemblyName System.Windows.Forms
@@ -71,68 +139,60 @@ jobs:
           Note "SCREEN=$($screen.Width)x$($screen.Height)"
           Note "INTERACTIVE=$([Environment]::UserInteractive)"
 
-          $process = Start-Process -FilePath $exe -ArgumentList "--factory-startup" -WindowStyle Maximized -PassThru
+          $process = Start-Process -FilePath $exe -ArgumentList "--factory-startup","--gpu-backend","opengl" -WindowStyle Maximized -PassThru
           Note "PROCESS_ID=$($process.Id)"
-          Start-Sleep -Seconds 20
+          Start-Sleep -Seconds 25
           $process.Refresh()
           Note "PROCESS_EXITED=$($process.HasExited)"
           Note "MAIN_WINDOW_HANDLE=$($process.MainWindowHandle)"
           Note "MAIN_WINDOW_TITLE=$($process.MainWindowTitle)"
+          if ($process.HasExited -or $process.MainWindowHandle -eq 0) {
+            Note "BLOCKED: no real LeStudio application window"
+            exit 8
+          }
 
-          if ($process.HasExited) {
-            Note "BLOCKED: LeStudio exited before capture"
-            exit 4
-          }
-          if (-not [Environment]::UserInteractive -or $process.MainWindowHandle -eq 0) {
-            Note "BLOCKED: GitHub-hosted runner has no exploitable interactive application window"
-            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-            exit 5
-          }
-          Note "CAPTURE_NATIVE_RESOLUTION=$($screen.Width)x$($screen.Height)"
           $bitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
           $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
           $graphics.CopyFromScreen(0,0,0,0,$bitmap.Size)
-          $png = Join-Path $PWD "capture\LeStudio_Interface_native.png"
+          $png = Join-Path $PWD "capture\LeStudio_Mesa_LLVMpipe_native.png"
           $bitmap.Save($png,[System.Drawing.Imaging.ImageFormat]::Png)
           $graphics.Dispose()
           $bitmap.Dispose()
 
           $check = [System.Drawing.Bitmap]::FromFile($png)
-          $samples = New-Object 'System.Collections.Generic.HashSet[int]'
+          $colors = New-Object 'System.Collections.Generic.HashSet[int]'
           $sum = 0L
           for ($y=0; $y -lt $screen.Height; $y+=16) {
             for ($x=0; $x -lt $screen.Width; $x+=16) {
               $c=$check.GetPixel($x,$y)
-              [void]$samples.Add($c.ToArgb())
+              [void]$colors.Add($c.ToArgb())
               $sum += $c.R + $c.G + $c.B
             }
           }
           $check.Dispose()
-          Note "SAMPLED_DISTINCT_COLORS=$($samples.Count)"
+          Note "SAMPLED_DISTINCT_COLORS=$($colors.Count)"
           Note "SAMPLED_RGB_SUM=$sum"
-          if ($samples.Count -lt 16 -or $sum -lt 10000) {
-            Note "BLOCKED: capture is black, empty, or effectively uniform"
+          if ($colors.Count -lt 16 -or $sum -lt 10000) {
+            Note "BLOCKED: black, empty, or uniform capture"
             Remove-Item -LiteralPath $png -Force
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-            exit 7
+            exit 9
           }
-
           Note "CAPTURE_OK=$png"
           Note "CAPTURE_SHA256=$((Get-FileHash $png -Algorithm SHA256).Hash)"
           Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
 
-      - name: Record final diagnostic status
+      - name: Record diagnostic status
         if: always()
         shell: pwsh
         run: |
-          "capture_step_outcome=${{ steps.capture.outcome }}" |
-            Set-Content capture\workflow-status.txt
+          "capture_step_outcome=${{ steps.capture.outcome }}" | Set-Content capture\workflow-status.txt
 
-      - name: Publish capture diagnostic
+      - name: Publish Mesa capture diagnostic
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: lestudio-real-gui-capture-native
+          name: lestudio-mesa-llvmpipe-capture
           path: capture
           retention-days: 30
           if-no-files-found: error
