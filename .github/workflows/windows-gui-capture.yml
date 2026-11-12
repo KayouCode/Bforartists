@@ -71,10 +71,15 @@ jobs:
 
           $mesaDlls = @("opengl32.dll","libglapi.dll","libgallium_wgl.dll")
           foreach ($name in $mesaDlls) {
-            $source = Join-Path $PWD "mesa\x64\$name"
-            if (-not (Test-Path -LiteralPath $source)) { Note "BLOCKED: Mesa DLL missing: $name"; exit 6 }
+            $candidates = @(Get-ChildItem -LiteralPath (Join-Path $PWD "mesa") -Recurse -File -Filter $name |
+              Where-Object { $_.FullName -match '\\x64\\' })
+            if ($candidates.Count -ne 1) {
+              Note "BLOCKED: expected one x64 Mesa DLL named $name, found $($candidates.Count)"
+              exit 6
+            }
+            $source = $candidates[0].FullName
             Copy-Item -LiteralPath $source -Destination (Join-Path (Split-Path $exe) $name)
-            Note "MESA_DLL=$name SHA256=$((Get-FileHash $source -Algorithm SHA256).Hash)"
+            Note "MESA_DLL=$name SOURCE=$source SHA256=$((Get-FileHash $source -Algorithm SHA256).Hash)"
           }
           Invoke-WebRequest -Uri "https://raw.githubusercontent.com/pal1000/mesa-dist-win/26.2.6/LICENSE" -OutFile "capture\MESA_LICENSE.txt"
 
