@@ -5837,12 +5837,14 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
      * LeStudio header without changing tabs elsewhere in Bforartists. */
     const uchar inner[4] = {24, 25, 27, 255};
     const uchar inner_sel[4] = {112, 72, 5, 255};
-    const uchar outline[4] = {212, 175, 55, 255};
+    const uchar outline[4] = {30, 31, 33, 255};
+    const uchar outline_sel[4] = {212, 175, 55, 255};
     const uchar text[4] = {225, 225, 225, 255};
     const uchar text_sel[4] = {255, 255, 255, 255};
     copy_v4_v4_uchar(lestudio_colors.inner, inner);
     copy_v4_v4_uchar(lestudio_colors.inner_sel, inner_sel);
     copy_v4_v4_uchar(lestudio_colors.outline, outline);
+    copy_v4_v4_uchar(lestudio_colors.outline_sel, outline_sel);
     copy_v4_v4_uchar(lestudio_colors.text, text);
     copy_v4_v4_uchar(lestudio_colors.text_sel, text_sel);
     lestudio_wt.wcol_theme = &lestudio_colors;

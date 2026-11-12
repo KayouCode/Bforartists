@@ -37,7 +37,8 @@ class TOPBAR_HT_upper_bar(Header):
         screen = context.screen
 
         brand = layout.row(align=True)
-        brand.scale_x = 1.08
+        brand.scale_x = 1.22
+        brand.scale_y = 1.2
         brand.label(text="LeStudio", icon="LESTUDIO_LOGO")
 
         layout.separator(type="LINE")

@@ -6,6 +6,9 @@
  * \ingroup edinterface
  */
 
+#include <algorithm>
+#include <vector>
+
 #include "BKE_anim_data.hh"
 #include "BKE_collection.hh"
 #include "BKE_context.hh"
@@ -1499,7 +1502,28 @@ static void template_ID_tabs(const bContext *C,
     return ICON_NONE;
   };
 
+  std::vector<ID *> ordered_tabs;
   for (ID *id : BKE_id_ordered_list(template_id.idlb)) {
+    ordered_tabs.push_back(id);
+  }
+  if (lestudio_workspace_tabs) {
+    const auto workspace_rank = [](const ID *id) {
+      const char *name = id->name + 2;
+      constexpr const char *order[] = {
+          "Accueil", "Modélisation", "Sculpture", "Matériaux", "Rendu", "Animation", "Scripting"};
+      for (int index = 0; index < 7; index++) {
+        if (STREQ(name, order[index])) {
+          return index;
+        }
+      }
+      return 7;
+    };
+    std::stable_sort(ordered_tabs.begin(), ordered_tabs.end(), [&](const ID *a, const ID *b) {
+      return workspace_rank(a) < workspace_rank(b);
+    });
+  }
+
+  for (ID *id : ordered_tabs) {
     const int icon = lestudio_workspace_tabs ? workspace_icon(id->name + 2) : ICON_NONE;
     const int name_width = fontstyle_string_width(&style->widget, id->name + 2);
     const int but_width = name_width + UI_UNIT_X + (icon != ICON_NONE ? UI_UNIT_X : 0);
@@ -1507,7 +1531,7 @@ static void template_ID_tabs(const bContext *C,
     ButtonTab *tab = static_cast<ButtonTab *>(uiDefButR_prop(block,
                                                              ButtonType::Tab,
                                                              id->name + 2,
-                                                             icon,
+                                                             0,
                                                              0,
                                                              but_width,
                                                              but_height,
@@ -1526,6 +1550,9 @@ static void template_ID_tabs(const bContext *C,
 
     if (lestudio_workspace_tabs) {
       tab->drawflag |= BUT_LESTUDIO_TAB;
+      if (icon != ICON_NONE) {
+        def_but_icon(tab, icon, UI_HAS_ICON);
+      }
     }
 
     button_drawflag_enable(tab, but_align);
