@@ -20,6 +20,20 @@ Expand-Archive -LiteralPath $outer.FullName -DestinationPath extracted -Force
 
 $exe = Join-Path $PWD "extracted\bforartists.exe"
 if (-not (Test-Path -LiteralPath $exe)) { Note "BLOCKED: executable missing"; exit 3 }
+$topbarFiles = @(Get-ChildItem -LiteralPath (Join-Path $PWD "extracted") -Recurse -Filter "space_topbar.py" -File)
+Note "DIAGNOSTIC_TOPBAR_FILES=$($topbarFiles.Count)"
+if ($topbarFiles.Count -ne 1) { Note "BLOCKED: expected one packaged topbar script"; exit 15 }
+$topbarPath = $topbarFiles[0].FullName
+$topbarOriginalHash = (Get-FileHash -LiteralPath $topbarPath -Algorithm SHA256).Hash
+$topbarContents = Get-Content -LiteralPath $topbarPath -Raw
+if (-not $topbarContents.Contains("layout.separator(factor=6.9)")) {
+  Note "BLOCKED: expected source spacer missing from package"
+  exit 16
+}
+$topbarContents = $topbarContents.Replace("layout.separator(factor=6.9)","layout.separator(factor=22.0)")
+Set-Content -LiteralPath $topbarPath -Value $topbarContents -Encoding utf8
+Note "DIAGNOSTIC_TOPBAR_SCRIPT=$topbarPath ORIGINAL_SHA256=$topbarOriginalHash PATCHED_SHA256=$((Get-FileHash -LiteralPath $topbarPath -Algorithm SHA256).Hash) SPACER=22.0"
+
 
 $mesaVersion = "26.2.6"
 $mesaArchive = Join-Path $PWD "mesa3d-$mesaVersion-release-mingw.7z"
