@@ -26,7 +26,9 @@ class LESTUDIO_PT_properties(_LeStudioPropertiesPanel, Panel):
 
     def draw(self, context):
         obj = context.object
-        self.layout.prop(
+        advanced = self.layout.row()
+        advanced.alignment = "RIGHT"
+        advanced.prop(
             context.window_manager,
             "lestudio_show_native_object_panels",
             text="",
