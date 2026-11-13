@@ -4,7 +4,7 @@ function Note([string]$message) {
   "$(Get-Date -Format o) $message" | Tee-Object -FilePath $log -Append
 }
 
-Note "PACKAGE_COMMIT=4ba84c1c9af06edcc6ac74c0027b4fc2c1a6a996"
+Note "PACKAGE_COMMIT=70bd023d6d8b6b411dfb217c4bc4b9f62db5fbf2"
 Note "CAPTURE_COMMIT=$env:GITHUB_SHA"
 Note "MESA_SOURCE=https://github.com/pal1000/mesa-dist-win/releases/tag/26.2.6"
 Note "MESA_VARIANT=release-mingw"
@@ -13,27 +13,13 @@ Note "RUNNER_NAME=$env:RUNNER_NAME"
 (query user 2>&1 | Out-String) | Tee-Object -FilePath $log -Append
 
 $outer = Get-ChildItem package-artifact -Filter "LeStudio-Windows-*.zip" -File
-if ($outer.Count -ne 1 -or $outer.Name -ne "LeStudio-Windows-4ba84c1c.zip") { Note "BLOCKED: expected commit package archive missing"; exit 2 }
+if ($outer.Count -ne 1 -or $outer.Name -ne "LeStudio-Windows-70bd023d.zip") { Note "BLOCKED: expected commit package archive missing"; exit 2 }
 Note "PACKAGE_BYTES=$($outer.Length)"
 Note "PACKAGE_SHA256=$((Get-FileHash $outer.FullName -Algorithm SHA256).Hash)"
 Expand-Archive -LiteralPath $outer.FullName -DestinationPath extracted -Force
 
 $exe = Join-Path $PWD "extracted\bforartists.exe"
 if (-not (Test-Path -LiteralPath $exe)) { Note "BLOCKED: executable missing"; exit 3 }
-$topbarFiles = @(Get-ChildItem -LiteralPath (Join-Path $PWD "extracted") -Recurse -Filter "space_topbar.py" -File)
-Note "DIAGNOSTIC_TOPBAR_FILES=$($topbarFiles.Count)"
-if ($topbarFiles.Count -ne 1) { Note "BLOCKED: expected one packaged topbar script"; exit 15 }
-$topbarPath = $topbarFiles[0].FullName
-$topbarOriginalHash = (Get-FileHash -LiteralPath $topbarPath -Algorithm SHA256).Hash
-$topbarContents = Get-Content -LiteralPath $topbarPath -Raw
-if (-not $topbarContents.Contains("layout.separator(factor=6.9)")) {
-  Note "BLOCKED: expected source spacer missing from package"
-  exit 16
-}
-$topbarContents = $topbarContents.Replace("layout.separator(factor=6.9)","layout.separator(factor=22.0)")
-Set-Content -LiteralPath $topbarPath -Value $topbarContents -Encoding utf8
-Note "DIAGNOSTIC_TOPBAR_SCRIPT=$topbarPath ORIGINAL_SHA256=$topbarOriginalHash PATCHED_SHA256=$((Get-FileHash -LiteralPath $topbarPath -Algorithm SHA256).Hash) SPACER=22.0"
-
 
 $mesaVersion = "26.2.6"
 $mesaArchive = Join-Path $PWD "mesa3d-$mesaVersion-release-mingw.7z"
@@ -261,10 +247,8 @@ public static class LeStudioRunnerInput {
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
-  [DllImport("user32.dll", EntryPoint="SetWindowLongPtrW")] public static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hwnd, System.Text.StringBuilder text, int length);
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(LeStudioPoint point);
-  [DllImport("user32.dll")] public static extern bool InvalidateRect(IntPtr hwnd, IntPtr rect, bool erase);
-  [DllImport("user32.dll")] public static extern bool UpdateWindow(IntPtr hwnd);
   [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr hwnd);
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extraInfo);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out LeStudioRect rect);
@@ -457,43 +441,10 @@ public static class LeStudioRunnerInput {
   }
   else {
     Note "CAPTION_BUTTONS=THREE_WIN32_CONTROLS"
-    $beforeClip = Join-Path $PWD "capture\LeStudio_10H_before_clip.png"
-    $clipBitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
-    $clipGraphics = [System.Drawing.Graphics]::FromImage($clipBitmap)
-    $clipGraphics.CopyFromScreen(0,0,0,0,$clipBitmap.Size)
-    $clipBitmap.Save($beforeClip,[System.Drawing.Imaging.ImageFormat]::Png)
-    $clipGraphics.Dispose()
-    $clipBitmap.Dispose()
-    $styleBefore = [LeStudioRunnerInput]::GetWindowLongPtr($handle, -16).ToInt64()
-    $styleRequested = $styleBefore -bor 0x02000000
-    $stylePrevious = [LeStudioRunnerInput]::SetWindowLongPtr($handle, -16, [IntPtr]::new($styleRequested)).ToInt64()
-    [void][LeStudioRunnerInput]::SetWindowPos($handle,[IntPtr]::Zero,0,0,0,0,0x0037)
-    Start-Sleep -Seconds 2
-    $styleAfter = [LeStudioRunnerInput]::GetWindowLongPtr($handle, -16).ToInt64()
-    foreach ($id in @(0x7A01, 0x7A02, 0x7A03)) {
-      $child = [LeStudioRunnerInput]::WindowFromPoint([LeStudioPoint]::new($buttonCenters[$id], $hitY))
-      [void][LeStudioRunnerInput]::InvalidateRect($child,[IntPtr]::Zero,$true)
-      [void][LeStudioRunnerInput]::UpdateWindow($child)
-    }
-    Start-Sleep -Milliseconds 300
-    Note ("CLIP_DIAGNOSTIC_STYLE_BEFORE=0x{0:X8} PREVIOUS=0x{1:X8} AFTER=0x{2:X8}" -f $styleBefore,$stylePrevious,$styleAfter)
-    $afterClip = Join-Path $PWD "capture\LeStudio_10H_after_clip.png"
-    $clipBitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
-    $clipGraphics = [System.Drawing.Graphics]::FromImage($clipBitmap)
-    $clipGraphics.CopyFromScreen(0,0,0,0,$clipBitmap.Size)
-    $clipBitmap.Save($afterClip,[System.Drawing.Imaging.ImageFormat]::Png)
-    $clipGraphics.Dispose()
-    $closeBright = 0
-    for ($py = 8; $py -le 25; $py++) {
-      for ($px = $screen.Width - 43; $px -le $screen.Width - 5; $px++) {
-        $pixel = $clipBitmap.GetPixel($px, $py)
-        if ($pixel.R -ge 150 -and $pixel.G -ge 150 -and $pixel.B -ge 150) {
-          $closeBright++
-        }
-      }
-    }
-    $clipBitmap.Dispose()
-    Note "CLIP_DIAGNOSTIC_CLOSE_BRIGHT=$closeBright"
+    $style = [LeStudioRunnerInput]::GetWindowLongPtr($handle, -16).ToInt64()
+    $clipChildren = ($style -band 0x02000000) -ne 0
+    Note ("CAPTION_STYLE=0x{0:X8} CLIPCHILDREN={1}" -f $style,$clipChildren)
+    if (-not $clipChildren) { $frameFailures++ }
     Click-Point $buttonCenters[0x7A02] $hitY
     $maxButtonRestored = -not [LeStudioRunnerInput]::IsZoomed($handle)
     Note "MAX_BUTTON_REAL_CLICK_RESTORED=$maxButtonRestored"
@@ -545,11 +496,48 @@ if ($colors.Count -lt 16 -or $sum -lt 10000) {
   exit 9
 }
 Note "CAPTURE_SHA256=$((Get-FileHash $png -Algorithm SHA256).Hash)"
+$rightActions = @(
+  @{ Name = "Bell"; X = $screen.Width - 206 },
+  @{ Name = "Help"; X = $screen.Width - 180 },
+  @{ Name = "User"; X = $screen.Width - 154 }
+)
+foreach ($action in $rightActions) {
+  [void][LeStudioRunnerInput]::SetForegroundWindow($handle)
+  $target = [LeStudioRunnerInput]::WindowFromPoint([LeStudioPoint]::new([int]$action.X, 15))
+  $targetId = [LeStudioRunnerInput]::GetDlgCtrlID($target)
+  Note "RIGHT_ACTION_TARGET_$($action.Name)=$target ID=$targetId MAIN=$handle"
+  if ($target -ne $handle) { $frameFailures++; Note "PARTIAL: right action covered by child control" }
+  Click-Point ([int]$action.X) 15
+  $actionForeground = [LeStudioRunnerInput]::GetForegroundWindow()
+  $titleBuffer = [System.Text.StringBuilder]::new(256)
+  [void][LeStudioRunnerInput]::GetWindowText($actionForeground,$titleBuffer,256)
+  $actionPng = Join-Path $PWD ("capture\LeStudio_10H_right_" + $action.Name + ".png")
+  $actionBitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
+  $actionGraphics = [System.Drawing.Graphics]::FromImage($actionBitmap)
+  $actionGraphics.CopyFromScreen(0,0,0,0,$actionBitmap.Size)
+  $actionBitmap.Save($actionPng,[System.Drawing.Imaging.ImageFormat]::Png)
+  $actionGraphics.Dispose()
+  $actionBitmap.Dispose()
+  Note "RIGHT_ACTION_CLICK_$($action.Name)=$($action.X),15 FOREGROUND=$actionForeground TITLE=$titleBuffer PNG_SHA256=$((Get-FileHash $actionPng -Algorithm SHA256).Hash)"
+  if ([LeStudioRunnerInput]::IsIconic($handle)) {
+    $frameFailures++
+    Note "PARTIAL: right action minimized main window"
+    [void][LeStudioRunnerInput]::ShowWindow($handle, 3)
+  }
+  if ($actionForeground -ne $handle -and $actionForeground -ne [IntPtr]::Zero) {
+    [void][LeStudioRunnerInput]::PostMessage($actionForeground, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+  }
+  else {
+    [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
+  }
+  Start-Sleep -Milliseconds 500
+}
+
 if (Test-Path -LiteralPath "capture\opengl-gui-probe.json") {
   $guiProbe = Get-Content -LiteralPath "capture\opengl-gui-probe.json" -Raw
   Note "GUI_OPENGL_PROBE=$guiProbe"
   $guiData = $guiProbe | ConvertFrom-Json
-  if (-not $guiData.build_hash.StartsWith("4ba84c1c9af")) { $frameFailures++; Note "BLOCKED: graphical executable commit mismatch" }
+  if (-not $guiData.build_hash.StartsWith("70bd023d6d8b")) { $frameFailures++; Note "BLOCKED: graphical executable commit mismatch" }
 }
 else {
   Note "GUI_OPENGL_PROBE=NOT_AVAILABLE"
