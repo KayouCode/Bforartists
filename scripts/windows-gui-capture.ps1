@@ -4,7 +4,7 @@ function Note([string]$message) {
   "$(Get-Date -Format o) $message" | Tee-Object -FilePath $log -Append
 }
 
-Note "PACKAGE_COMMIT=63a1b71779ecd632db92317777d47a0b8d3f0010"
+Note "PACKAGE_COMMIT=8ebfeaca551caea10b872b164786bfb630408276"
 Note "CAPTURE_COMMIT=$env:GITHUB_SHA"
 Note "MESA_SOURCE=https://github.com/pal1000/mesa-dist-win/releases/tag/26.2.6"
 Note "MESA_VARIANT=release-mingw"
@@ -13,7 +13,7 @@ Note "RUNNER_NAME=$env:RUNNER_NAME"
 (query user 2>&1 | Out-String) | Tee-Object -FilePath $log -Append
 
 $outer = Get-ChildItem package-artifact -Filter "LeStudio-Windows-*.zip" -File
-if ($outer.Count -ne 1 -or $outer.Name -ne "LeStudio-Windows-63a1b717.zip") { Note "BLOCKED: expected commit package archive missing"; exit 2 }
+if ($outer.Count -ne 1 -or $outer.Name -ne "LeStudio-Windows-8ebfeaca.zip") { Note "BLOCKED: expected commit package archive missing"; exit 2 }
 Note "PACKAGE_BYTES=$($outer.Length)"
 Note "PACKAGE_SHA256=$((Get-FileHash $outer.FullName -Algorithm SHA256).Hash)"
 Expand-Archive -LiteralPath $outer.FullName -DestinationPath extracted -Force
@@ -380,9 +380,12 @@ public static class LeStudioRunnerInput {
   $minimized = [LeStudioRunnerInput]::IsIconic($handle)
   [void][LeStudioRunnerInput]::ShowWindow($handle, 9)
   Start-Sleep -Milliseconds 600
-  $restored = -not [LeStudioRunnerInput]::IsZoomed($handle) -and -not [LeStudioRunnerInput]::IsIconic($handle)
-  Note "SYSTEM_STATES_MAXIMIZED=$maximized MINIMIZED=$minimized RESTORED=$restored"
-  if (-not ($maximized -and $minimized -and $restored)) { $frameFailures++ }
+  $restoredFromMinimized = -not [LeStudioRunnerInput]::IsIconic($handle)
+  [void][LeStudioRunnerInput]::ShowWindow($handle, 9)
+  Start-Sleep -Milliseconds 600
+  $restoredNormal = -not [LeStudioRunnerInput]::IsZoomed($handle) -and -not [LeStudioRunnerInput]::IsIconic($handle)
+  Note "SYSTEM_STATES_MAXIMIZED=$maximized MINIMIZED=$minimized RESTORED_FROM_MINIMIZED=$restoredFromMinimized RESTORED_NORMAL=$restoredNormal"
+  if (-not ($maximized -and $minimized -and $restoredFromMinimized -and $restoredNormal)) { $frameFailures++ }
 
   [void][LeStudioRunnerInput]::SetForegroundWindow($handle)
   [System.Windows.Forms.SendKeys]::SendWait("% ")
@@ -406,7 +409,7 @@ public static class LeStudioRunnerInput {
     $code = [LeStudioRunnerInput]::HitTest($handle, $hitX, $hitY)
     if (-not $hitCodes.ContainsKey($code)) { $hitCodes[$code] = $hitX }
   }
-  Note "CAPTION_HITTESTS=$((@($hitCodes.GetEnumerator() | ForEach-Object { '$($_.Key):$($_.Value)' }) -join ','))"
+  Note "CAPTION_HITTESTS=$((@($hitCodes.GetEnumerator() | ForEach-Object { "$($_.Key):$($_.Value)" }) -join ','))"
   if ($hitCodes.ContainsKey(9)) {
     [void][LeStudioRunnerInput]::SetCursorPos($hitCodes[9], $hitY)
     Start-Sleep -Seconds 2
@@ -474,7 +477,7 @@ if (Test-Path -LiteralPath "capture\opengl-gui-probe.json") {
   $guiProbe = Get-Content -LiteralPath "capture\opengl-gui-probe.json" -Raw
   Note "GUI_OPENGL_PROBE=$guiProbe"
   $guiData = $guiProbe | ConvertFrom-Json
-  if (-not $guiData.build_hash.StartsWith("63a1b71779ec")) { $frameFailures++; Note "BLOCKED: graphical executable commit mismatch" }
+  if (-not $guiData.build_hash.StartsWith("8ebfeaca551c")) { $frameFailures++; Note "BLOCKED: graphical executable commit mismatch" }
 }
 else {
   Note "GUI_OPENGL_PROBE=NOT_AVAILABLE"
