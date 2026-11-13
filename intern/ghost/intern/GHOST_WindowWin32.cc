@@ -89,6 +89,10 @@ GHOST_WindowWin32::GHOST_WindowWin32(GHOST_SystemWin32 *system,
   DWORD style = parent_window ?
                     WS_POPUPWINDOW | WS_CAPTION | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_SIZEBOX :
                     WS_OVERLAPPEDWINDOW;
+  if (!parent_window && !dialog) {
+    /* Keep the OpenGL parent from painting over the owner-drawn caption buttons. */
+    style |= WS_CLIPCHILDREN;
+  }
 
   if (state == GHOST_kWindowStateFullScreen) {
     style |= WS_MAXIMIZE;

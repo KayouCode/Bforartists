@@ -71,7 +71,7 @@ class TOPBAR_HT_upper_bar(Header):
         controls.menu("TOPBAR_MT_help", text="", icon="LESTUDIO_HELP")
         controls.operator("screen.userpref_show", text="", icon="LESTUDIO_USER")
         # Keep the three existing actions clear of the Win32 system button strip.
-        layout.separator(factor=6.9)
+        layout.separator(factor=22.0)
         # BFA - now in the toolbar as an opt-in
         # Active workspace view-layer is retrieved through window, not through workspace.
         # layout.template_ID(window, "scene", new="scene.new", unlink="scene.delete")
