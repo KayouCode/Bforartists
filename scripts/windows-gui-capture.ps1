@@ -246,7 +246,11 @@ public static class LeStudioRunnerInput {
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
+  [DllImport("user32.dll", EntryPoint="SetWindowLongPtrW")] public static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(LeStudioPoint point);
+  [DllImport("user32.dll")] public static extern bool InvalidateRect(IntPtr hwnd, IntPtr rect, bool erase);
+  [DllImport("user32.dll")] public static extern bool UpdateWindow(IntPtr hwnd);
   [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr hwnd);
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extraInfo);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out LeStudioRect rect);
@@ -439,6 +443,43 @@ public static class LeStudioRunnerInput {
   }
   else {
     Note "CAPTION_BUTTONS=THREE_WIN32_CONTROLS"
+    $beforeClip = Join-Path $PWD "capture\LeStudio_10H_before_clip.png"
+    $clipBitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
+    $clipGraphics = [System.Drawing.Graphics]::FromImage($clipBitmap)
+    $clipGraphics.CopyFromScreen(0,0,0,0,$clipBitmap.Size)
+    $clipBitmap.Save($beforeClip,[System.Drawing.Imaging.ImageFormat]::Png)
+    $clipGraphics.Dispose()
+    $clipBitmap.Dispose()
+    $styleBefore = [LeStudioRunnerInput]::GetWindowLongPtr($handle, -16).ToInt64()
+    $styleRequested = $styleBefore -bor 0x02000000
+    $stylePrevious = [LeStudioRunnerInput]::SetWindowLongPtr($handle, -16, [IntPtr]::new($styleRequested)).ToInt64()
+    [void][LeStudioRunnerInput]::SetWindowPos($handle,[IntPtr]::Zero,0,0,0,0,0x0037)
+    Start-Sleep -Seconds 2
+    $styleAfter = [LeStudioRunnerInput]::GetWindowLongPtr($handle, -16).ToInt64()
+    foreach ($id in @(0x7A01, 0x7A02, 0x7A03)) {
+      $child = [LeStudioRunnerInput]::WindowFromPoint([LeStudioPoint]::new($buttonCenters[$id], $hitY))
+      [void][LeStudioRunnerInput]::InvalidateRect($child,[IntPtr]::Zero,$true)
+      [void][LeStudioRunnerInput]::UpdateWindow($child)
+    }
+    Start-Sleep -Milliseconds 300
+    Note ("CLIP_DIAGNOSTIC_STYLE_BEFORE=0x{0:X8} PREVIOUS=0x{1:X8} AFTER=0x{2:X8}" -f $styleBefore,$stylePrevious,$styleAfter)
+    $afterClip = Join-Path $PWD "capture\LeStudio_10H_after_clip.png"
+    $clipBitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
+    $clipGraphics = [System.Drawing.Graphics]::FromImage($clipBitmap)
+    $clipGraphics.CopyFromScreen(0,0,0,0,$clipBitmap.Size)
+    $clipBitmap.Save($afterClip,[System.Drawing.Imaging.ImageFormat]::Png)
+    $clipGraphics.Dispose()
+    $closeBright = 0
+    for ($py = 8; $py -le 25; $py++) {
+      for ($px = $screen.Width - 43; $px -le $screen.Width - 5; $px++) {
+        $pixel = $clipBitmap.GetPixel($px, $py)
+        if ($pixel.R -ge 150 -and $pixel.G -ge 150 -and $pixel.B -ge 150) {
+          $closeBright++
+        }
+      }
+    }
+    $clipBitmap.Dispose()
+    Note "CLIP_DIAGNOSTIC_CLOSE_BRIGHT=$closeBright"
     Click-Point $buttonCenters[0x7A02] $hitY
     $maxButtonRestored = -not [LeStudioRunnerInput]::IsZoomed($handle)
     Note "MAX_BUTTON_REAL_CLICK_RESTORED=$maxButtonRestored"
