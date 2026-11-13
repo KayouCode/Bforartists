@@ -31,7 +31,7 @@ jobs:
           path: package-artifact
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
-          run-id: 43293655095
+          run-id: 43332334457
 
       - name: Deploy Mesa locally, verify OpenGL, and capture
         id: capture
@@ -43,7 +43,7 @@ jobs:
             "$(Get-Date -Format o) $message" | Tee-Object -FilePath $log -Append
           }
 
-          Note "PACKAGE_COMMIT=c0d0ba0fccc8681b82400fa53f33728867d00728"
+          Note "PACKAGE_COMMIT=63a1b71779ecd632db92317777d47a0b8d3f0010"
           Note "CAPTURE_COMMIT=${{ github.sha }}"
           Note "MESA_SOURCE=https://github.com/pal1000/mesa-dist-win/releases/tag/26.2.6"
           Note "MESA_VARIANT=release-mingw"
@@ -52,7 +52,7 @@ jobs:
           (query user 2>&1 | Out-String) | Tee-Object -FilePath $log -Append
 
           $outer = Get-ChildItem package-artifact -Filter "LeStudio-Windows-*.zip" -File
-          if ($outer.Count -ne 1) { Note "BLOCKED: complete package archive missing"; exit 2 }
+          if ($outer.Count -ne 1 -or $outer.Name -ne "LeStudio-Windows-63a1b717.zip") { Note "BLOCKED: expected commit package archive missing"; exit 2 }
           Note "PACKAGE_BYTES=$($outer.Length)"
           Note "PACKAGE_SHA256=$((Get-FileHash $outer.FullName -Algorithm SHA256).Hash)"
           Expand-Archive -LiteralPath $outer.FullName -DestinationPath extracted -Force
@@ -213,8 +213,15 @@ jobs:
 
           output = os.path.join(os.getcwd(), "capture", "opengl-gui-probe.json")
           def inspect_gui():
-              result = {"mode": "graphical", "binary": bpy.app.binary_path}
+              result = {"mode": "graphical", "binary": bpy.app.binary_path, "build_hash": bpy.app.build_hash.decode()}
               try:
+                  if not bpy.data.objects.get("Mission10D_Cube"):
+                      bpy.ops.mesh.primitive_cube_add()
+                      bpy.context.object.name = "Mission10D_Cube"
+                  project = os.path.join(os.getcwd(), "capture", "Mission10D.blend")
+                  bpy.ops.wm.save_as_mainfile(filepath=project)
+                  result["project"] = project
+                  result["cube_count"] = sum(1 for ob in bpy.data.objects if ob.type == "MESH")
                   import gpu
                   result["version"] = gpu.platform.version_get()
                   result["renderer"] = gpu.platform.renderer_get()
@@ -265,11 +272,27 @@ jobs:
             Add-Type -TypeDefinition @'
           using System;
           using System.Runtime.InteropServices;
+          [StructLayout(LayoutKind.Sequential)]
+          public struct LeStudioRect {
+            public int Left, Top, Right, Bottom;
+          }
           public static class LeStudioRunnerInput {
             [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
             [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
             [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
             [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extraInfo);
+            [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out LeStudioRect rect);
+            [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
+            [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hwnd);
+            [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hwnd);
+            [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int width, int height, uint flags);
+            [DllImport("user32.dll")] public static extern IntPtr GetSystemMenu(IntPtr hwnd, bool revert);
+            [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hwnd, uint message, IntPtr wparam, IntPtr lparam);
+            [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wparam, IntPtr lparam);
+            public static int HitTest(IntPtr hwnd, int x, int y) {
+              long packed = ((long)(y & 0xffff) << 16) | (uint)(x & 0xffff);
+              return (int)SendMessage(hwnd, 0x84, IntPtr.Zero, new IntPtr(packed)).ToInt64();
+            }
           }
           '@
             $foreground = [LeStudioRunnerInput]::SetForegroundWindow($process.MainWindowHandle)
@@ -310,7 +333,7 @@ jobs:
               $focus = [LeStudioRunnerInput]::SetForegroundWindow($process.MainWindowHandle)
               Start-Sleep -Milliseconds 300
               $foregroundHandle = [LeStudioRunnerInput]::GetForegroundWindow()
-              [void][LeStudioRunnerInput]::SetCursorPos([int]$tab.X, 39)
+              [void][LeStudioRunnerInput]::SetCursorPos([int]$tab.X, 15)
               Start-Sleep -Milliseconds 150
               [LeStudioRunnerInput]::mouse_event(0x02, 0, 0, 0, [UIntPtr]::Zero)
               Start-Sleep -Milliseconds 150
@@ -329,11 +352,132 @@ jobs:
                 }
               } while ($observed -ne $tab.Name -and $timer.Elapsed.TotalSeconds -lt 30)
               $timer.Stop()
-              Note "TAB_CLICK_EXPECTED=$($tab.Name) OBSERVED=$observed OBJECTS=$observedObjects X=$($tab.X) Y=39 WAIT_MS=$($timer.ElapsedMilliseconds)"
+              Note "TAB_CLICK_EXPECTED=$($tab.Name) OBSERVED=$observed OBJECTS=$observedObjects X=$($tab.X) Y=15 WAIT_MS=$($timer.ElapsedMilliseconds)"
               if ($observed -ne $tab.Name) { $tabFailures++ }
             }
             Note "TAB_FAILURES=$tabFailures"
-            [void][LeStudioRunnerInput]::SetCursorPos(900, 10)
+            $frameFailures = 0
+            $handle = $process.MainWindowHandle
+            function Get-Bounds([IntPtr]$windowHandle) {
+              $bounds = [LeStudioRect]::new()
+              if (-not [LeStudioRunnerInput]::GetWindowRect($windowHandle, [ref]$bounds)) {
+                throw "GetWindowRect failed"
+              }
+              return $bounds
+            }
+            function Click-Point([int]$x, [int]$y) {
+              [void][LeStudioRunnerInput]::SetCursorPos($x, $y)
+              Start-Sleep -Milliseconds 150
+              [LeStudioRunnerInput]::mouse_event(0x02, 0, 0, 0, [UIntPtr]::Zero)
+              Start-Sleep -Milliseconds 150
+              [LeStudioRunnerInput]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
+              Start-Sleep -Milliseconds 500
+            }
+            $systemMenu = [LeStudioRunnerInput]::GetSystemMenu($handle, $false)
+            Note "SYSTEM_MENU_HANDLE=$systemMenu"
+            if ($systemMenu -eq [IntPtr]::Zero) { $frameFailures++ }
+
+            $beforeDrag = Get-Bounds $handle
+            [void][LeStudioRunnerInput]::SetForegroundWindow($handle)
+            [void][LeStudioRunnerInput]::SetCursorPos(780, 16)
+            Start-Sleep -Milliseconds 180
+            [LeStudioRunnerInput]::mouse_event(0x02, 0, 0, 0, [UIntPtr]::Zero)
+            Start-Sleep -Milliseconds 180
+            [void][LeStudioRunnerInput]::SetCursorPos(700, 95)
+            Start-Sleep -Milliseconds 450
+            [LeStudioRunnerInput]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
+            Start-Sleep -Seconds 1
+            $afterDrag = Get-Bounds $handle
+            $dragMoved = $afterDrag.Left -ne $beforeDrag.Left -or $afterDrag.Top -ne $beforeDrag.Top
+            Note "DRAG_BEFORE=$($beforeDrag.Left),$($beforeDrag.Top),$($beforeDrag.Right),$($beforeDrag.Bottom) AFTER=$($afterDrag.Left),$($afterDrag.Top),$($afterDrag.Right),$($afterDrag.Bottom) MOVED=$dragMoved"
+            if (-not $dragMoved) { $frameFailures++ }
+
+            [void][LeStudioRunnerInput]::ShowWindow($handle, 9)
+            [void][LeStudioRunnerInput]::SetWindowPos($handle, [IntPtr]::Zero, 60, 60, 860, 600, 0x0040)
+            Start-Sleep -Milliseconds 600
+            $beforeResize = Get-Bounds $handle
+            $resizeX = $beforeResize.Right - 3
+            $resizeY = $beforeResize.Top + 300
+            [void][LeStudioRunnerInput]::SetCursorPos($resizeX, $resizeY)
+            Start-Sleep -Milliseconds 180
+            [LeStudioRunnerInput]::mouse_event(0x02, 0, 0, 0, [UIntPtr]::Zero)
+            Start-Sleep -Milliseconds 180
+            [void][LeStudioRunnerInput]::SetCursorPos(($resizeX + 45), $resizeY)
+            Start-Sleep -Milliseconds 450
+            [LeStudioRunnerInput]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
+            Start-Sleep -Milliseconds 700
+            $afterResize = Get-Bounds $handle
+            $resizeGrew = ($afterResize.Right - $afterResize.Left) -gt ($beforeResize.Right - $beforeResize.Left)
+            Note "RESIZE_BEFORE_WIDTH=$($beforeResize.Right - $beforeResize.Left) AFTER_WIDTH=$($afterResize.Right - $afterResize.Left) GREW=$resizeGrew"
+            if (-not $resizeGrew) { $frameFailures++ }
+
+            [void][LeStudioRunnerInput]::ShowWindow($handle, 3)
+            Start-Sleep -Milliseconds 600
+            $maximized = [LeStudioRunnerInput]::IsZoomed($handle)
+            [void][LeStudioRunnerInput]::ShowWindow($handle, 6)
+            Start-Sleep -Milliseconds 600
+            $minimized = [LeStudioRunnerInput]::IsIconic($handle)
+            [void][LeStudioRunnerInput]::ShowWindow($handle, 9)
+            Start-Sleep -Milliseconds 600
+            $restored = -not [LeStudioRunnerInput]::IsZoomed($handle) -and -not [LeStudioRunnerInput]::IsIconic($handle)
+            Note "SYSTEM_STATES_MAXIMIZED=$maximized MINIMIZED=$minimized RESTORED=$restored"
+            if (-not ($maximized -and $minimized -and $restored)) { $frameFailures++ }
+
+            [void][LeStudioRunnerInput]::SetForegroundWindow($handle)
+            [System.Windows.Forms.SendKeys]::SendWait("% ")
+            Start-Sleep -Milliseconds 600
+            $menuPng = Join-Path $PWD "capture\LeStudio_M10D_system_menu.png"
+            $menuBitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
+            $menuGraphics = [System.Drawing.Graphics]::FromImage($menuBitmap)
+            $menuGraphics.CopyFromScreen(0,0,0,0,$menuBitmap.Size)
+            $menuBitmap.Save($menuPng,[System.Drawing.Imaging.ImageFormat]::Png)
+            $menuGraphics.Dispose()
+            $menuBitmap.Dispose()
+            Note "SYSTEM_MENU_CAPTURE_SHA256=$((Get-FileHash $menuPng -Algorithm SHA256).Hash)"
+            [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
+
+            [void][LeStudioRunnerInput]::ShowWindow($handle, 3)
+            Start-Sleep -Milliseconds 600
+            $maxBounds = Get-Bounds $handle
+            $hitY = [Math]::Max(15, $maxBounds.Top + 16)
+            $hitCodes = @{}
+            for ($hitX = $maxBounds.Right - 170; $hitX -lt $maxBounds.Right - 4; $hitX += 3) {
+              $code = [LeStudioRunnerInput]::HitTest($handle, $hitX, $hitY)
+              if (-not $hitCodes.ContainsKey($code)) { $hitCodes[$code] = $hitX }
+            }
+            Note "CAPTION_HITTESTS=$((@($hitCodes.GetEnumerator() | ForEach-Object { '$($_.Key):$($_.Value)' }) -join ','))"
+            if ($hitCodes.ContainsKey(9)) {
+              [void][LeStudioRunnerInput]::SetCursorPos($hitCodes[9], $hitY)
+              Start-Sleep -Seconds 2
+              $hoverPng = Join-Path $PWD "capture\LeStudio_M10D_maximize_hover.png"
+              $hoverBitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
+              $hoverGraphics = [System.Drawing.Graphics]::FromImage($hoverBitmap)
+              $hoverGraphics.CopyFromScreen(0,0,0,0,$hoverBitmap.Size)
+              $hoverBitmap.Save($hoverPng,[System.Drawing.Imaging.ImageFormat]::Png)
+              $hoverGraphics.Dispose()
+              $hoverBitmap.Dispose()
+              Note "MAXIMIZE_HOVER_CAPTURE_SHA256=$((Get-FileHash $hoverPng -Algorithm SHA256).Hash)"
+            }
+            Note "SNAP_LAYOUTS=NOT_TESTED_ON_WINDOWS_SERVER_2022"
+            if (-not $hitCodes.ContainsKey(8) -or -not $hitCodes.ContainsKey(9) -or -not $hitCodes.ContainsKey(20)) {
+              $frameFailures++
+              Note "CAPTION_BUTTONS=NOT_ALL_EXPOSED"
+            }
+            else {
+              Click-Point $hitCodes[9] $hitY
+              $maxButtonRestored = -not [LeStudioRunnerInput]::IsZoomed($handle)
+              Note "MAX_BUTTON_RESTORED=$maxButtonRestored"
+              if (-not $maxButtonRestored) { $frameFailures++ }
+              [void][LeStudioRunnerInput]::ShowWindow($handle, 3)
+              Start-Sleep -Milliseconds 350
+              Click-Point $hitCodes[8] $hitY
+              $minButtonMinimized = [LeStudioRunnerInput]::IsIconic($handle)
+              Note "MIN_BUTTON_MINIMIZED=$minButtonMinimized"
+              if (-not $minButtonMinimized) { $frameFailures++ }
+              [void][LeStudioRunnerInput]::ShowWindow($handle, 3)
+            }
+            Note "FRAME_FAILURES=$frameFailures"
+            [void][LeStudioRunnerInput]::SetCursorPos(500, 500)
             Start-Sleep -Seconds 2
           }
 
@@ -368,6 +512,8 @@ jobs:
           if (Test-Path -LiteralPath "capture\opengl-gui-probe.json") {
             $guiProbe = Get-Content -LiteralPath "capture\opengl-gui-probe.json" -Raw
             Note "GUI_OPENGL_PROBE=$guiProbe"
+            $guiData = $guiProbe | ConvertFrom-Json
+            if (-not $guiData.build_hash.StartsWith("63a1b71779ec")) { $frameFailures++; Note "BLOCKED: graphical executable commit mismatch" }
           }
           else {
             Note "GUI_OPENGL_PROBE=NOT_AVAILABLE"
@@ -384,8 +530,115 @@ jobs:
           else {
             Note "CAPTURE_CANDIDATE=$png"
           }
-          Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          $topCheck = [System.Drawing.Bitmap]::FromFile($png)
+          $topPixel = $topCheck.GetPixel(500, 10)
+          $topCheck.Dispose()
+          Note "TOPBAR_PIXEL_500_10=$($topPixel.R),$($topPixel.G),$($topPixel.B)"
+          if (($topPixel.R + $topPixel.G + $topPixel.B) -gt 300) {
+            $frameFailures++
+            Note "BLOCKED: bright native title bar remains above LeStudio header"
+          }
+
+          $project = Join-Path $PWD "capture\Mission10D.blend"
+          if (-not (Test-Path -LiteralPath $project)) {
+            $frameFailures++
+            Note "BLOCKED: native project save missing"
+          }
+          else {
+            Note "PROJECT_SAVED_SHA256=$((Get-FileHash $project -Algorithm SHA256).Hash)"
+          }
+
+          $process.Refresh()
+          if (-not $process.HasExited -and $process.MainWindowHandle -ne 0) {
+            [void][LeStudioRunnerInput]::SetForegroundWindow($process.MainWindowHandle)
+            [System.Windows.Forms.SendKeys]::SendWait("^s")
+            Start-Sleep -Seconds 2
+            if ($hitCodes -and $hitCodes.ContainsKey(20)) {
+              Click-Point $hitCodes[20] $hitY
+              Note "CLOSE_BUTTON_CLICK=$($hitCodes[20]),$hitY"
+            }
+            else {
+              [void][LeStudioRunnerInput]::PostMessage($process.MainWindowHandle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+              Note "CLOSE_FALLBACK=WM_CLOSE"
+              $frameFailures++
+            }
+            Start-Sleep -Seconds 3
+            $process.Refresh()
+            Note "CLOSE_EXITED=$($process.HasExited)"
+            if (-not $process.HasExited) {
+              $frameFailures++
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            }
+          }
+          else {
+            $frameFailures++
+            Note "BLOCKED: application exited before close test"
+          }
+
+          if (Test-Path -LiteralPath $project) {
+            $reloadProbe = Join-Path $PWD "reload_probe.py"
+            @'
+          import bpy
+          import json
+          import os
+
+          def verify_reload():
+              result = {
+                  "filepath": bpy.data.filepath,
+                  "cube_count": sum(1 for ob in bpy.data.objects if ob.name == "Mission10D_Cube" and ob.type == "MESH"),
+                  "scene": bpy.context.scene.name if bpy.context.scene else None,
+              }
+              with open(os.path.join(os.getcwd(), "capture", "reload-probe.json"), "w", encoding="utf-8") as handle:
+                  json.dump(result, handle, indent=2)
+              print("LESTUDIO_RELOAD", json.dumps(result, sort_keys=True), flush=True)
+              return None
+
+          bpy.app.timers.register(verify_reload, first_interval=4.0)
+          '@ | Set-Content -LiteralPath $reloadProbe
+            $reloadStdout = Join-Path $PWD "capture\reload-stdout.log"
+            $reloadStderr = Join-Path $PWD "capture\reload-stderr.log"
+            $reloaded = Start-Process -FilePath $exe -ArgumentList "--factory-startup","--gpu-backend","opengl",$project,"--python",$reloadProbe -WindowStyle Maximized -RedirectStandardOutput $reloadStdout -RedirectStandardError $reloadStderr -PassThru
+            Start-Sleep -Seconds 20
+            $reloaded.Refresh()
+            Note "RELOAD_WINDOW_HANDLE=$($reloaded.MainWindowHandle) EXITED=$($reloaded.HasExited)"
+            $reloadDataPath = Join-Path $PWD "capture\reload-probe.json"
+            if (Test-Path -LiteralPath $reloadDataPath) {
+              $reloadData = Get-Content -LiteralPath $reloadDataPath -Raw | ConvertFrom-Json
+              Note "RELOAD_FILEPATH=$($reloadData.filepath) CUBE_COUNT=$($reloadData.cube_count) SCENE=$($reloadData.scene)"
+              if ($reloadData.cube_count -ne 1 -or $reloadData.filepath -ne $project) { $frameFailures++ }
+            }
+            else {
+              Note "BLOCKED: reload probe missing"
+              $frameFailures++
+            }
+            if (-not $reloaded.HasExited -and $reloaded.MainWindowHandle -ne 0) {
+              [void][LeStudioRunnerInput]::SetForegroundWindow($reloaded.MainWindowHandle)
+              [void][LeStudioRunnerInput]::SetCursorPos([int]($screen.Width * 0.50), [int]($screen.Height * 0.716))
+              [LeStudioRunnerInput]::mouse_event(0x02, 0, 0, 0, [UIntPtr]::Zero)
+              [LeStudioRunnerInput]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
+              Start-Sleep -Seconds 2
+              [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
+              Start-Sleep -Seconds 2
+              $reloadPng = Join-Path $PWD "capture\LeStudio_M10D_reloaded.png"
+              $reloadBitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
+              $reloadGraphics = [System.Drawing.Graphics]::FromImage($reloadBitmap)
+              $reloadGraphics.CopyFromScreen(0,0,0,0,$reloadBitmap.Size)
+              $reloadBitmap.Save($reloadPng,[System.Drawing.Imaging.ImageFormat]::Png)
+              $reloadGraphics.Dispose()
+              $reloadBitmap.Dispose()
+              Note "RELOAD_CAPTURE_SHA256=$((Get-FileHash $reloadPng -Algorithm SHA256).Hash)"
+              [void][LeStudioRunnerInput]::PostMessage($reloaded.MainWindowHandle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+            }
+            else { $frameFailures++ }
+            Start-Sleep -Seconds 2
+            $reloaded.Refresh()
+            if (-not $reloaded.HasExited) {
+              Stop-Process -Id $reloaded.Id -Force -ErrorAction SilentlyContinue
+            }
+          }
+          Note "FINAL_FRAME_FAILURES=$frameFailures"
           if ($tabFailures -gt 0) { Note "BLOCKED: one or more workspace tab clicks failed"; exit 13 }
+          if ($frameFailures -gt 0) { Note "PARTIAL: one or more frame or reload checks failed"; exit 14 }
 
       - name: Record diagnostic status
         if: always()
