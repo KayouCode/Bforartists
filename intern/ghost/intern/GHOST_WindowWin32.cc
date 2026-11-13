@@ -377,6 +377,28 @@ bool GHOST_WindowWin32::usesCustomFrame() const
   return custom_frame_enabled_;
 }
 
+void GHOST_WindowWin32::updateCaptionButtons()
+{
+  if (!h_wnd_) {
+    return;
+  }
+  RECT client = {};
+  ::GetClientRect(h_wnd_, &client);
+  const int height = std::max(1, MulDiv(32, getDPIHint(), USER_DEFAULT_SCREEN_DPI));
+  const int width = std::max(1, MulDiv(46, getDPIHint(), USER_DEFAULT_SCREEN_DPI));
+  const int ids[] = {kCaptionMinimize, kCaptionMaximize, kCaptionClose};
+  for (int i = 0; i < 3; i++) {
+    HWND button = ::GetDlgItem(h_wnd_, ids[i]);
+    if (!button) {
+      continue;
+    }
+    ::SetWindowPos(button, HWND_TOP, client.right - (3 - i) * width, 0, width, height,
+                   SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    ::ShowWindow(button, custom_frame_enabled_ ? SW_SHOWNOACTIVATE : SW_HIDE);
+    ::InvalidateRect(button, nullptr, TRUE);
+  }
+}
+
 void GHOST_WindowWin32::refreshCustomFrame()
 {
   if (!h_wnd_ || is_dialog_ || parent_window_hwnd_ != HWND_DESKTOP) {
@@ -388,10 +410,33 @@ void GHOST_WindowWin32::refreshCustomFrame()
   bool available = SUCCEEDED(composition_result) && composition_enabled != FALSE;
   HRESULT extension_result = E_NOTIMPL;
   if (available) {
-    const int caption_height = std::max(1, MulDiv(32, getDPIHint(), USER_DEFAULT_SCREEN_DPI));
-    const MARGINS margins = {0, 0, caption_height, 0};
+    /* Extending DWM glass over the client tinted the LeStudio header blue.
+     * Its own OpenGL header must paint all 32 pixels. */
+    const MARGINS margins = {0, 0, 0, 0};
     extension_result = DwmExtendFrameIntoClientArea(h_wnd_, &margins);
     available = SUCCEEDED(extension_result);
+  }
+
+  /* Native Win32 child buttons send real system commands. If they cannot be
+   * created, retain the ordinary Windows frame and its system controls. */
+  const int button_ids[] = {kCaptionMinimize, kCaptionMaximize, kCaptionClose};
+  if (available) {
+    for (const int id : button_ids) {
+      if (!::GetDlgItem(h_wnd_, id) &&
+          !::CreateWindowExW(0,
+                             L"BUTTON",
+                             L"",
+                             WS_CHILD | BS_OWNERDRAW,
+                             0, 0, 0, 0,
+                             h_wnd_,
+                             reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+                             ::GetModuleHandleW(nullptr),
+                             nullptr))
+      {
+        available = false;
+        break;
+      }
+    }
   }
 
   const bool changed = custom_frame_enabled_ != available;
@@ -402,6 +447,8 @@ void GHOST_WindowWin32::refreshCustomFrame()
     ::SetWindowPos(h_wnd_, nullptr, 0, 0, 0, 0,
                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
   }
+
+  updateCaptionButtons();
 
   RECT window_rect = {};
   RECT client_rect = {};

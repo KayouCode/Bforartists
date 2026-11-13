@@ -1785,6 +1785,78 @@ LRESULT WINAPI GHOST_SystemWin32::s_wndProc(HWND hwnd, uint msg, WPARAM wParam, 
         }
       }
       switch (msg) {
+        case WM_COMMAND: {
+          const int id = LOWORD(wParam);
+          if (HIWORD(wParam) == BN_CLICKED && lParam != 0 && window->usesCustomFrame()) {
+            WPARAM command = 0;
+            if (id == GHOST_WindowWin32::kCaptionMinimize) {
+              command = SC_MINIMIZE;
+            }
+            else if (id == GHOST_WindowWin32::kCaptionMaximize) {
+              command = ::IsZoomed(hwnd) ? SC_RESTORE : SC_MAXIMIZE;
+            }
+            else if (id == GHOST_WindowWin32::kCaptionClose) {
+              command = SC_CLOSE;
+            }
+            if (command) {
+              std::fprintf(stderr, "LESTUDIO_FRAME_BUTTON id=%d command=0x%llx\n",
+                           id, static_cast<unsigned long long>(command));
+              ::SendMessageW(hwnd, WM_SYSCOMMAND, command, 0);
+              return 0;
+            }
+          }
+          break;
+        }
+        case WM_DRAWITEM: {
+          const auto *item = reinterpret_cast<const DRAWITEMSTRUCT *>(lParam);
+          if (!window->usesCustomFrame() || !item || item->CtlType != ODT_BUTTON ||
+              (item->CtlID != GHOST_WindowWin32::kCaptionMinimize &&
+               item->CtlID != GHOST_WindowWin32::kCaptionMaximize &&
+               item->CtlID != GHOST_WindowWin32::kCaptionClose))
+          {
+            break;
+          }
+          const bool pressed = (item->itemState & ODS_SELECTED) != 0;
+          const COLORREF background = pressed ?
+                                          (item->CtlID == GHOST_WindowWin32::kCaptionClose ?
+                                               RGB(165, 42, 52) : RGB(55, 55, 58)) :
+                                          RGB(22, 23, 26);
+          HBRUSH brush = ::CreateSolidBrush(background);
+          ::FillRect(item->hDC, &item->rcItem, brush);
+          ::DeleteObject(brush);
+          const int cx = (item->rcItem.left + item->rcItem.right) / 2;
+          const int cy = (item->rcItem.top + item->rcItem.bottom) / 2;
+          const int unit = std::max(4, MulDiv(5, window->getDPIHint(),
+                                              USER_DEFAULT_SCREEN_DPI));
+          HPEN pen = ::CreatePen(PS_SOLID, 1, RGB(238, 238, 238));
+          HGDIOBJ old_pen = ::SelectObject(item->hDC, pen);
+          HGDIOBJ old_brush = ::SelectObject(item->hDC, ::GetStockObject(NULL_BRUSH));
+          if (item->CtlID == GHOST_WindowWin32::kCaptionMinimize) {
+            ::MoveToEx(item->hDC, cx - unit, cy + 3, nullptr);
+            ::LineTo(item->hDC, cx + unit + 1, cy + 3);
+          }
+          else if (item->CtlID == GHOST_WindowWin32::kCaptionMaximize) {
+            if (::IsZoomed(hwnd)) {
+              ::Rectangle(item->hDC, cx - unit + 2, cy - unit - 2,
+                          cx + unit + 2, cy + unit - 2);
+              ::Rectangle(item->hDC, cx - unit - 2, cy - unit + 2,
+                          cx + unit - 2, cy + unit + 2);
+            }
+            else {
+              ::Rectangle(item->hDC, cx - unit, cy - unit, cx + unit + 1, cy + unit + 1);
+            }
+          }
+          else {
+            ::MoveToEx(item->hDC, cx - unit, cy - unit, nullptr);
+            ::LineTo(item->hDC, cx + unit + 1, cy + unit + 1);
+            ::MoveToEx(item->hDC, cx + unit, cy - unit, nullptr);
+            ::LineTo(item->hDC, cx - unit - 1, cy + unit + 1);
+          }
+          ::SelectObject(item->hDC, old_brush);
+          ::SelectObject(item->hDC, old_pen);
+          ::DeleteObject(pen);
+          return TRUE;
+        }
         /* We need to check if new key layout has AltGr. */
         case WM_INPUTLANGCHANGE: {
           system->handleKeyboardChange();
@@ -2332,6 +2404,7 @@ LRESULT WINAPI GHOST_SystemWin32::s_wndProc(HWND hwnd, uint msg, WPARAM wParam, 
           break;
         }
         case WM_SIZE: {
+          window->updateCaptionButtons();
           /* The WM_SIZE message is sent to a window after its size has changed.
            * The WM_SIZE and WM_MOVE messages are not sent if an application handles the
            * WM_WINDOWPOSCHANGED message without calling DefWindowProc. It is more efficient

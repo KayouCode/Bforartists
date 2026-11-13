@@ -110,6 +110,10 @@ class GHOST_WindowWin32 : public GHOST_Window {
   /** Integrated title bar is enabled only while DWM composition is available. */
   bool usesCustomFrame() const;
   void refreshCustomFrame();
+  void updateCaptionButtons();
+  static constexpr int kCaptionMinimize = 0x7A01;
+  static constexpr int kCaptionMaximize = 0x7A02;
+  static constexpr int kCaptionClose = 0x7A03;
 
   /**
    * Returns the handle of the window.
