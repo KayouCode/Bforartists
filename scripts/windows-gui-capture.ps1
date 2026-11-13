@@ -443,7 +443,9 @@ public static class LeStudioRunnerInput {
     $maxButtonRestored = -not [LeStudioRunnerInput]::IsZoomed($handle)
     Note "MAX_BUTTON_REAL_CLICK_RESTORED=$maxButtonRestored"
     if (-not $maxButtonRestored) { $frameFailures++ }
-    Click-Point $buttonCenters[0x7A02] $hitY
+    $restoredBounds = Get-Bounds $handle
+    $maxOffset = $maxBounds.Right - $buttonCenters[0x7A02]
+    Click-Point ($restoredBounds.Right - $maxOffset) ($restoredBounds.Top + 16)
     $maxButtonMaximized = [LeStudioRunnerInput]::IsZoomed($handle)
     Note "MAX_BUTTON_REAL_CLICK_MAXIMIZED=$maxButtonMaximized"
     if (-not $maxButtonMaximized) { $frameFailures++ }
