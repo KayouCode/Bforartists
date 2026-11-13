@@ -4,7 +4,7 @@ function Note([string]$message) {
   "$(Get-Date -Format o) $message" | Tee-Object -FilePath $log -Append
 }
 
-Note "PACKAGE_COMMIT=8ebfeaca551caea10b872b164786bfb630408276"
+Note "PACKAGE_COMMIT=4ba84c1c9af06edcc6ac74c0027b4fc2c1a6a996"
 Note "CAPTURE_COMMIT=$env:GITHUB_SHA"
 Note "MESA_SOURCE=https://github.com/pal1000/mesa-dist-win/releases/tag/26.2.6"
 Note "MESA_VARIANT=release-mingw"
@@ -13,7 +13,7 @@ Note "RUNNER_NAME=$env:RUNNER_NAME"
 (query user 2>&1 | Out-String) | Tee-Object -FilePath $log -Append
 
 $outer = Get-ChildItem package-artifact -Filter "LeStudio-Windows-*.zip" -File
-if ($outer.Count -ne 1 -or $outer.Name -ne "LeStudio-Windows-8ebfeaca.zip") { Note "BLOCKED: expected commit package archive missing"; exit 2 }
+if ($outer.Count -ne 1 -or $outer.Name -ne "LeStudio-Windows-4ba84c1c.zip") { Note "BLOCKED: expected commit package archive missing"; exit 2 }
 Note "PACKAGE_BYTES=$($outer.Length)"
 Note "PACKAGE_SHA256=$((Get-FileHash $outer.FullName -Algorithm SHA256).Hash)"
 Expand-Archive -LiteralPath $outer.FullName -DestinationPath extracted -Force
@@ -237,10 +237,17 @@ using System.Runtime.InteropServices;
 public struct LeStudioRect {
   public int Left, Top, Right, Bottom;
 }
+[StructLayout(LayoutKind.Sequential)]
+public struct LeStudioPoint {
+  public int X, Y;
+  public LeStudioPoint(int x, int y) { X = x; Y = y; }
+}
 public static class LeStudioRunnerInput {
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(LeStudioPoint point);
+  [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr hwnd);
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extraInfo);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out LeStudioRect rect);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
@@ -405,41 +412,49 @@ public static class LeStudioRunnerInput {
   $maxBounds = Get-Bounds $handle
   $hitY = [Math]::Max(15, $maxBounds.Top + 16)
   $hitCodes = @{}
+  $buttonXs = @{}
   for ($hitX = $maxBounds.Right - 170; $hitX -lt $maxBounds.Right - 4; $hitX += 3) {
     $code = [LeStudioRunnerInput]::HitTest($handle, $hitX, $hitY)
     if (-not $hitCodes.ContainsKey($code)) { $hitCodes[$code] = $hitX }
+    $child = [LeStudioRunnerInput]::WindowFromPoint([LeStudioPoint]::new($hitX, $hitY))
+    if ($child -ne [IntPtr]::Zero -and $child -ne $handle) {
+      $id = [LeStudioRunnerInput]::GetDlgCtrlID($child)
+      if ($id -in @(0x7A01, 0x7A02, 0x7A03)) {
+        if (-not $buttonXs.ContainsKey($id)) { $buttonXs[$id] = @() }
+        $buttonXs[$id] += $hitX
+      }
+    }
   }
   Note "CAPTION_HITTESTS=$((@($hitCodes.GetEnumerator() | ForEach-Object { "$($_.Key):$($_.Value)" }) -join ','))"
-  if ($hitCodes.ContainsKey(9)) {
-    [void][LeStudioRunnerInput]::SetCursorPos($hitCodes[9], $hitY)
-    Start-Sleep -Seconds 2
-    $hoverPng = Join-Path $PWD "capture\LeStudio_M10D_maximize_hover.png"
-    $hoverBitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
-    $hoverGraphics = [System.Drawing.Graphics]::FromImage($hoverBitmap)
-    $hoverGraphics.CopyFromScreen(0,0,0,0,$hoverBitmap.Size)
-    $hoverBitmap.Save($hoverPng,[System.Drawing.Imaging.ImageFormat]::Png)
-    $hoverGraphics.Dispose()
-    $hoverBitmap.Dispose()
-    Note "MAXIMIZE_HOVER_CAPTURE_SHA256=$((Get-FileHash $hoverPng -Algorithm SHA256).Hash)"
+  Note "WIN32_CHILD_BUTTONS=$((@($buttonXs.GetEnumerator() | ForEach-Object { "$($_.Key):$($_.Value.Count)" }) -join ','))"
+  $buttonCenters = @{}
+  foreach ($id in @(0x7A01, 0x7A02, 0x7A03)) {
+    if ($buttonXs.ContainsKey($id)) {
+      $buttonCenters[$id] = $buttonXs[$id][[int][Math]::Floor($buttonXs[$id].Count / 2)]
+    }
   }
-  Note "SNAP_LAYOUTS=NOT_TESTED_ON_WINDOWS_SERVER_2022"
-  if (-not $hitCodes.ContainsKey(8) -or -not $hitCodes.ContainsKey(9) -or -not $hitCodes.ContainsKey(20)) {
+  if ($buttonCenters.Count -ne 3) {
     $frameFailures++
-    Note "CAPTION_BUTTONS=NOT_ALL_EXPOSED"
+    Note "CAPTION_BUTTONS=NOT_ALL_VISIBLE"
   }
   else {
-    Click-Point $hitCodes[9] $hitY
+    Note "CAPTION_BUTTONS=THREE_WIN32_CONTROLS"
+    Click-Point $buttonCenters[0x7A02] $hitY
     $maxButtonRestored = -not [LeStudioRunnerInput]::IsZoomed($handle)
-    Note "MAX_BUTTON_RESTORED=$maxButtonRestored"
+    Note "MAX_BUTTON_REAL_CLICK_RESTORED=$maxButtonRestored"
     if (-not $maxButtonRestored) { $frameFailures++ }
-    [void][LeStudioRunnerInput]::ShowWindow($handle, 3)
-    Start-Sleep -Milliseconds 350
-    Click-Point $hitCodes[8] $hitY
+    Click-Point $buttonCenters[0x7A02] $hitY
+    $maxButtonMaximized = [LeStudioRunnerInput]::IsZoomed($handle)
+    Note "MAX_BUTTON_REAL_CLICK_MAXIMIZED=$maxButtonMaximized"
+    if (-not $maxButtonMaximized) { $frameFailures++ }
+    Click-Point $buttonCenters[0x7A01] $hitY
     $minButtonMinimized = [LeStudioRunnerInput]::IsIconic($handle)
-    Note "MIN_BUTTON_MINIMIZED=$minButtonMinimized"
+    Note "MIN_BUTTON_REAL_CLICK_MINIMIZED=$minButtonMinimized"
     if (-not $minButtonMinimized) { $frameFailures++ }
     [void][LeStudioRunnerInput]::ShowWindow($handle, 3)
+    Start-Sleep -Milliseconds 500
   }
+  Note "SNAP_LAYOUTS=NOT_TESTED_ON_WINDOWS_SERVER_2022"
   Note "FRAME_FAILURES=$frameFailures"
   [void][LeStudioRunnerInput]::SetCursorPos(500, 500)
   Start-Sleep -Seconds 2
@@ -477,7 +492,7 @@ if (Test-Path -LiteralPath "capture\opengl-gui-probe.json") {
   $guiProbe = Get-Content -LiteralPath "capture\opengl-gui-probe.json" -Raw
   Note "GUI_OPENGL_PROBE=$guiProbe"
   $guiData = $guiProbe | ConvertFrom-Json
-  if (-not $guiData.build_hash.StartsWith("8ebfeaca551c")) { $frameFailures++; Note "BLOCKED: graphical executable commit mismatch" }
+  if (-not $guiData.build_hash.StartsWith("4ba84c1c9af")) { $frameFailures++; Note "BLOCKED: graphical executable commit mismatch" }
 }
 else {
   Note "GUI_OPENGL_PROBE=NOT_AVAILABLE"
@@ -498,9 +513,15 @@ $topCheck = [System.Drawing.Bitmap]::FromFile($png)
 $topPixel = $topCheck.GetPixel(500, 10)
 $topCheck.Dispose()
 Note "TOPBAR_PIXEL_500_10=$($topPixel.R),$($topPixel.G),$($topPixel.B)"
-if (($topPixel.R + $topPixel.G + $topPixel.B) -gt 300) {
+$neutralWhite = ($topPixel.R -ge 200 -and $topPixel.G -ge 200 -and $topPixel.B -ge 200 -and
+  ([Math]::Max($topPixel.R, [Math]::Max($topPixel.G, $topPixel.B)) -
+   [Math]::Min($topPixel.R, [Math]::Min($topPixel.G, $topPixel.B))) -le 25)
+$blueTint = ($topPixel.B -ge 100 -and $topPixel.B -gt $topPixel.R * 1.4 -and
+  $topPixel.B -gt $topPixel.G * 1.15)
+Note "TOPBAR_NEUTRAL_WHITE=$neutralWhite BLUE_TINT=$blueTint"
+if ($neutralWhite -or $blueTint) {
   $frameFailures++
-  Note "BLOCKED: bright native title bar remains above LeStudio header"
+  Note "BLOCKED: native white or blue frame still covers LeStudio header"
 }
 
 $project = Join-Path $PWD "capture\Mission10D.blend"
@@ -517,9 +538,9 @@ if (-not $process.HasExited -and $process.MainWindowHandle -ne 0) {
   [void][LeStudioRunnerInput]::SetForegroundWindow($process.MainWindowHandle)
   [System.Windows.Forms.SendKeys]::SendWait("^s")
   Start-Sleep -Seconds 2
-  if ($hitCodes -and $hitCodes.ContainsKey(20)) {
-    Click-Point $hitCodes[20] $hitY
-    Note "CLOSE_BUTTON_CLICK=$($hitCodes[20]),$hitY"
+  if ($buttonCenters -and $buttonCenters.ContainsKey(0x7A03)) {
+    Click-Point $buttonCenters[0x7A03] $hitY
+    Note "CLOSE_BUTTON_REAL_CLICK=$($buttonCenters[0x7A03]),$hitY"
   }
   else {
     [void][LeStudioRunnerInput]::PostMessage($process.MainWindowHandle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
