@@ -513,7 +513,21 @@ else {
 }
 $topCheck = [System.Drawing.Bitmap]::FromFile($png)
 $topPixel = $topCheck.GetPixel(500, 10)
+$closeGlyphBright = 0
+for ($py = 8; $py -le 25; $py++) {
+  for ($px = $screen.Width - 43; $px -le $screen.Width - 5; $px++) {
+    $pixel = $topCheck.GetPixel($px, $py)
+    if ($pixel.R -ge 150 -and $pixel.G -ge 150 -and $pixel.B -ge 150) {
+      $closeGlyphBright++
+    }
+  }
+}
 $topCheck.Dispose()
+Note "CLOSE_GLYPH_BRIGHT_PIXELS=$closeGlyphBright"
+if ($closeGlyphBright -lt 8) {
+  $frameFailures++
+  Note "PARTIAL: clickable close control has no visible glyph"
+}
 Note "TOPBAR_PIXEL_500_10=$($topPixel.R),$($topPixel.G),$($topPixel.B)"
 $neutralWhite = ($topPixel.R -ge 200 -and $topPixel.G -ge 200 -and $topPixel.B -ge 200 -and
   ([Math]::Max($topPixel.R, [Math]::Max($topPixel.G, $topPixel.B)) -
