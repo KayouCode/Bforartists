@@ -7,6 +7,7 @@
  */
 
 #include <algorithm>
+#include <cstdio>
 #include <limits>
 #include <map>
 
@@ -1666,22 +1667,86 @@ LRESULT WINAPI GHOST_SystemWin32::s_wndProc(HWND hwnd, uint msg, WPARAM wParam, 
       if (window->usesCustomFrame() &&
           (::GetWindowLongPtr(hwnd, GWL_STYLE) & WS_CAPTION) != 0)
       {
-        LRESULT dwm_result = 0;
-        if (::DwmDefWindowProc(hwnd, msg, wParam, lParam, &dwm_result)) {
-          return dwm_result;
-        }
-        if (msg == WM_NCCALCSIZE && wParam) {
-          /* Keep the full client area for the LeStudio header. Maximized windows
-           * must still honor the monitor work area and its taskbar. */
-          if (::IsZoomed(hwnd)) {
-            MONITORINFO monitor_info = {sizeof(MONITORINFO)};
-            if (::GetMonitorInfoW(::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST),
-                                  &monitor_info))
-            {
-              reinterpret_cast<NCCALCSIZE_PARAMS *>(lParam)->rgrc[0] = monitor_info.rcWork;
+        if (msg == WM_NCCALCSIZE) {
+          /* DWM is consulted only after the custom client bounds have been calculated.
+           * Keep the full LeStudio header in the client area; a maximized window
+           * still respects the monitor work area and taskbar. */
+          if (wParam) {
+            auto *params = reinterpret_cast<NCCALCSIZE_PARAMS *>(lParam);
+            if (::IsZoomed(hwnd)) {
+              MONITORINFO monitor_info = {sizeof(MONITORINFO)};
+              if (::GetMonitorInfoW(::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST),
+                                    &monitor_info))
+              {
+                params->rgrc[0] = monitor_info.rcWork;
+              }
             }
           }
+          static unsigned int calc_trace_count = 0;
+          if (calc_trace_count++ < 24) {
+            const RECT &client = wParam ?
+                                     reinterpret_cast<NCCALCSIZE_PARAMS *>(lParam)->rgrc[0] :
+                                     *reinterpret_cast<RECT *>(lParam);
+            std::fprintf(stderr,
+                         "LESTUDIO_FRAME_NCCALC hwnd=%p wparam=%llu maximized=%d "
+                         "style=0x%llx client=%ld,%ld,%ld,%ld\n",
+                         static_cast<void *>(hwnd),
+                         static_cast<unsigned long long>(wParam),
+                         int(::IsZoomed(hwnd)),
+                         static_cast<unsigned long long>(::GetWindowLongPtr(hwnd, GWL_STYLE)),
+                         client.left,
+                         client.top,
+                         client.right,
+                         client.bottom);
+          }
           return 0;
+        }
+        LRESULT dwm_result = 0;
+        const BOOL dwm_handled = ::DwmDefWindowProc(hwnd, msg, wParam, lParam, &dwm_result);
+        if (msg == WM_NCPAINT || msg == WM_NCACTIVATE || msg == WM_NCHITTEST) {
+          static unsigned int dwm_trace_count = 0;
+          if (dwm_trace_count++ < 48) {
+            std::fprintf(stderr,
+                         "LESTUDIO_FRAME_DWM hwnd=%p msg=0x%04x handled=%d result=%lld\n",
+                         static_cast<void *>(hwnd),
+                         unsigned(msg),
+                         int(dwm_handled),
+                         static_cast<long long>(dwm_result));
+          }
+        }
+        if (dwm_handled) {
+          return dwm_result;
+        }
+        if (msg == WM_NCPAINT || msg == WM_NCACTIVATE) {
+          RECT window_rect = {};
+          POINT client_origin = {0, 0};
+          const bool client_at_top =
+              ::GetWindowRect(hwnd, &window_rect) &&
+              ::ClientToScreen(hwnd, &client_origin) &&
+              client_origin.y <= window_rect.top +
+                                     MulDiv(8, window->getDPIHint(), USER_DEFAULT_SCREEN_DPI);
+          static unsigned int paint_trace_count = 0;
+          if (paint_trace_count++ < 16) {
+            std::fprintf(stderr,
+                         "LESTUDIO_FRAME_PAINT hwnd=%p msg=0x%04x client_at_top=%d "
+                         "window_top=%ld client_top=%ld action=%s\n",
+                         static_cast<void *>(hwnd),
+                         unsigned(msg),
+                         int(client_at_top),
+                         window_rect.top,
+                         client_origin.y,
+                         client_at_top ? "preserve_client" : "native_fallback");
+          }
+          if (client_at_top) {
+            /* The native non-client paint would cover the client-owned header.
+             * Keep the native activation behavior without repainting its caption. */
+            if (msg == WM_NCPAINT) {
+              return 0;
+            }
+            if (!::IsIconic(hwnd)) {
+              return ::DefWindowProcW(hwnd, msg, wParam, -1);
+            }
+          }
         }
         if (msg == WM_NCHITTEST) {
           RECT window_rect;
@@ -2273,6 +2338,29 @@ LRESULT WINAPI GHOST_SystemWin32::s_wndProc(HWND hwnd, uint msg, WPARAM wParam, 
            * to perform any move or size change processing during the WM_WINDOWPOSCHANGED
            * message without calling DefWindowProc.
            */
+          if (window->usesCustomFrame()) {
+            static unsigned int size_trace_count = 0;
+            if (size_trace_count++ < 16) {
+              RECT window_rect = {};
+              RECT client_rect = {};
+              POINT client_origin = {0, 0};
+              ::GetWindowRect(hwnd, &window_rect);
+              ::GetClientRect(hwnd, &client_rect);
+              ::ClientToScreen(hwnd, &client_origin);
+              std::fprintf(stderr,
+                           "LESTUDIO_FRAME_SIZE hwnd=%p window=%ld,%ld,%ld,%ld "
+                           "client_origin=%ld,%ld client_size=%ld,%ld\n",
+                           static_cast<void *>(hwnd),
+                           window_rect.left,
+                           window_rect.top,
+                           window_rect.right,
+                           window_rect.bottom,
+                           client_origin.x,
+                           client_origin.y,
+                           client_rect.right - client_rect.left,
+                           client_rect.bottom - client_rect.top);
+            }
+          }
           event = processWindowSizeEvent(window);
           break;
         }

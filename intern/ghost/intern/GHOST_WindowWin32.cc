@@ -7,6 +7,7 @@
  */
 
 #include <algorithm>
+#include <cstdio>
 
 #include "GHOST_ContextD3D.hh"
 #include "GHOST_ContextNone.hh"
@@ -383,21 +384,50 @@ void GHOST_WindowWin32::refreshCustomFrame()
   }
 
   BOOL composition_enabled = FALSE;
-  bool available = SUCCEEDED(DwmIsCompositionEnabled(&composition_enabled)) &&
-                   composition_enabled != FALSE;
+  const HRESULT composition_result = DwmIsCompositionEnabled(&composition_enabled);
+  bool available = SUCCEEDED(composition_result) && composition_enabled != FALSE;
+  HRESULT extension_result = E_NOTIMPL;
   if (available) {
     const int caption_height = std::max(1, MulDiv(32, getDPIHint(), USER_DEFAULT_SCREEN_DPI));
     const MARGINS margins = {0, 0, caption_height, 0};
-    available = SUCCEEDED(DwmExtendFrameIntoClientArea(h_wnd_, &margins));
+    extension_result = DwmExtendFrameIntoClientArea(h_wnd_, &margins);
+    available = SUCCEEDED(extension_result);
   }
 
-  if (custom_frame_enabled_ != available) {
+  const bool changed = custom_frame_enabled_ != available;
+  if (changed) {
     custom_frame_enabled_ = available;
     /* Recalculate the non-client area immediately; a failed DWM setup restores
      * the ordinary Windows caption rather than leaving a borderless window. */
     ::SetWindowPos(h_wnd_, nullptr, 0, 0, 0, 0,
                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
   }
+
+  RECT window_rect = {};
+  RECT client_rect = {};
+  POINT client_origin = {0, 0};
+  ::GetWindowRect(h_wnd_, &window_rect);
+  ::GetClientRect(h_wnd_, &client_rect);
+  ::ClientToScreen(h_wnd_, &client_origin);
+  std::fprintf(stderr,
+               "LESTUDIO_FRAME_REFRESH hwnd=%p composition_hr=0x%08lx composition=%d "
+               "extension_hr=0x%08lx enabled=%d changed=%d style=0x%llx "
+               "window=%ld,%ld,%ld,%ld client_origin=%ld,%ld client_size=%ld,%ld\n",
+               static_cast<void *>(h_wnd_),
+               static_cast<unsigned long>(composition_result),
+               int(composition_enabled),
+               static_cast<unsigned long>(extension_result),
+               int(custom_frame_enabled_),
+               int(changed),
+               static_cast<unsigned long long>(::GetWindowLongPtr(h_wnd_, GWL_STYLE)),
+               window_rect.left,
+               window_rect.top,
+               window_rect.right,
+               window_rect.bottom,
+               client_origin.x,
+               client_origin.y,
+               client_rect.right - client_rect.left,
+               client_rect.bottom - client_rect.top);
 }
 
 void *GHOST_WindowWin32::getOSWindow() const
