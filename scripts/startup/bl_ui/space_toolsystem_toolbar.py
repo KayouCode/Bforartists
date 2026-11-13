@@ -3822,6 +3822,11 @@ class VIEW3D_PT_tools_active(ToolSelectPanelHelper, Panel):
     def tools_from_context(cls, context, mode=None):
         if mode is None:
             mode = context.mode
+        if (mode == 'OBJECT' and context.window is not None and
+                context.window.workspace.name == 'Modélisation'):
+            for item in cls._tools_lestudio:
+                yield item
+            return
         for tools in (cls._tools[None], cls._tools.get(mode, ())):
             for item in tools:
                 if not (type(item) is ToolDef) and callable(item):
@@ -3922,6 +3927,25 @@ class VIEW3D_PT_tools_active(ToolSelectPanelHelper, Panel):
         None,
         *_tools_annotate,
         _defs_view3d_generic.ruler,
+    )
+
+    # A compact selection of the same native tools in the modeling workspace.
+    # Every other native tool remains available through its normal menus,
+    # shortcuts and the unmodified tool layouts of the other workspaces.
+    _tools_lestudio = (
+        *_tools_select,
+        _defs_view3d_generic.cursor,
+        None,
+        _defs_transform.translate,
+        _defs_transform.rotate,
+        _defs_transform.scale,
+        _defs_transform.transform,
+        None,
+        *_tools_annotate,
+        _defs_view3d_generic.ruler,
+        None,
+        _defs_view3d_add.cube_add,
+        _defs_view3d_add.uv_sphere_add,
     )
 
     # Private tools dictionary, store data to implement `tools_all` & `tools_from_context`.

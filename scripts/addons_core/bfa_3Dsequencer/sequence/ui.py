@@ -241,6 +241,12 @@ class PROPERTIES_PT_obj_users_scene_check(bpy.types.Panel):
     bl_context = "object"
     bl_label = "Sequencer Usage"
 
+    @classmethod
+    def poll(cls, context):
+        if context.window is not None and context.window.workspace.name == "Modélisation":
+            return context.window_manager.lestudio_show_native_object_panels
+        return True
+
     def draw(self, context):
         self.layout.operator("sequence.check_obj_users_scene", icon="TEXT")
 

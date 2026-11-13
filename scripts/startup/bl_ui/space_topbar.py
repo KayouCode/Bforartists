@@ -38,14 +38,16 @@ class TOPBAR_HT_upper_bar(Header):
 
         layout.separator(factor=0.55)
         brand = layout.row(align=True)
-        brand.ui_units_x = 5.3
+        brand.ui_units_x = 9.8
         brand.scale_y = 1.35
         brand.label(text="LeStudio", icon="LESTUDIO_LOGO")
 
         layout.separator(type="LINE")
 
         if not screen.show_fullscreen:
-            layout.template_ID_tabs(
+            navigation = layout.row(align=True)
+            navigation.scale_x = 1.45
+            navigation.template_ID_tabs(
                 window,
                 "workspace",
                 menu="TOPBAR_MT_workspace_menu",

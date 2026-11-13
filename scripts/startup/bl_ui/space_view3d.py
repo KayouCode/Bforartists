@@ -12215,6 +12215,7 @@ class VIEW3D_AST_brush_gpencil_weight(AssetShelfHiddenByDefault, View3DAssetShel
 class VIEW3D_AST_object(bpy.types.AssetShelf):
     bl_space_type = "VIEW_3D"
     bl_options = {"STORE_ENABLED_CATALOGS_IN_PREFERENCES"}
+    bl_default_preview_size = 64
     mode = "OBJECT"
 
     @classmethod

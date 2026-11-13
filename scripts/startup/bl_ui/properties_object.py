@@ -18,6 +18,14 @@ class ObjectButtonsPanel:
     bl_region_type = 'WINDOW'
     bl_context = "object"
 
+    @classmethod
+    def poll(cls, context):
+        # Keep every native object control available through the explicit
+        # advanced-properties toggle in the LeStudio modeling workspace.
+        if context.window is not None and context.window.workspace.name == "Modélisation":
+            return context.window_manager.lestudio_show_native_object_panels
+        return True
+
 
 class OBJECT_PT_context_object(ObjectButtonsPanel, Panel):
     bl_label = ""
@@ -790,6 +798,27 @@ classes = (
     OBJECT_PT_animation,
     OBJECT_PT_custom_props,
 )
+
+
+def _lestudio_native_object_panels_visible(context):
+    if context.window is None or context.window.workspace.name != "Modélisation":
+        return True
+    return context.window_manager.lestudio_show_native_object_panels
+
+
+def _lestudio_wrap_native_poll(panel_class, original):
+    original_function = original.__func__ if isinstance(original, classmethod) else original
+
+    @classmethod
+    def poll(cls, context):
+        return _lestudio_native_object_panels_visible(context) and original_function(cls, context)
+
+    panel_class.poll = poll
+
+
+for _panel_class in classes:
+    if issubclass(_panel_class, Panel) and "poll" in _panel_class.__dict__:
+        _lestudio_wrap_native_poll(_panel_class, _panel_class.__dict__["poll"])
 
 if __name__ == "__main__":  # only for live edit.
     from bpy.utils import register_class

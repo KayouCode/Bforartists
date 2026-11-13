@@ -40,6 +40,7 @@ _modules = [
     "properties_mask_common",
     "properties_material",
     "properties_material_gpencil",
+    "space_lestudio",
     "properties_object",
     "properties_paint_common",
     "properties_grease_pencil_common",
@@ -137,6 +138,7 @@ def register():
         for cls in mod.classes:
             register_class(cls)
 
+    space_lestudio.register_props()
     space_filebrowser.register_props()
     properties_paint_common.register()
 
@@ -205,6 +207,7 @@ def unregister():
     from bpy.utils import unregister_class
 
     properties_paint_common.unregister()
+    space_lestudio.unregister_props()
 
     for mod in reversed(_modules_loaded):
         for cls in reversed(mod.classes):

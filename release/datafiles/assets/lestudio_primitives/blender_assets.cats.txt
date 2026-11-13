@@ -1,0 +1,3 @@
+# LeStudio native modeling primitives
+VERSION 1
+a8682230-1732-48ab-8d8c-8895cacbc9ed:Primitives:Primitives
