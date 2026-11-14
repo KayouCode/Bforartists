@@ -148,7 +148,10 @@ def _set_color(target, name, color):
 
 
 def _apply_theme():
-    theme = bpy.context.preferences.themes[0]
+    preferences = bpy.context.preferences
+    preferences.view.language = "fr_FR"
+    preferences.view.use_translate_interface = True
+    theme = preferences.themes[0]
     ui = theme.user_interface
     gold = _color("#D4AF37")
     burgundy = _color("#6B0F1A")
@@ -199,6 +202,29 @@ def _register_primitives():
     library.path = str(directory)
 
 
+def _select_startup_primitives():
+    """Show the bundled native assets in the initial modeling shelf."""
+    if bpy.data.filepath or bpy.context.preferences.filepaths.asset_libraries.get("LeStudio Primitives") is None:
+        return None
+    for window in bpy.context.window_manager.windows:
+        if window.workspace.name != "Modélisation":
+            continue
+        for area in window.screen.areas:
+            if area.type != "VIEW_3D":
+                continue
+            region = next((item for item in area.regions if item.type == "ASSET_SHELF_HEADER"), None)
+            if region is None:
+                continue
+            with bpy.context.temp_override(window=window, area=area, region=region):
+                shelf = bpy.context.asset_shelf
+                if shelf is not None:
+                    shelf.asset_library_reference = "LeStudio Primitives"
+                    shelf.show_names = True
+                    shelf.preview_size = 64
+                    area.tag_redraw()
+    return None
+
+
 def register_props():
     bpy.types.WindowManager.lestudio_show_native_object_panels = BoolProperty(
         name="Afficher les propriétés natives avancées",
@@ -207,6 +233,7 @@ def register_props():
     )
     _apply_theme()
     _register_primitives()
+    bpy.app.timers.register(_select_startup_primitives, first_interval=2.0)
 
 
 def unregister_props():
