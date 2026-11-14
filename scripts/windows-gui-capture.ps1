@@ -6,7 +6,7 @@ function Note([string]$message) {
 
 Note "PACKAGE_COMMIT=593019d7355f8dd5dc769ae6735e05ec425e8138"
 Note "CAPTURE_COMMIT=$env:GITHUB_SHA"
-Note "COORDINATE_TESTS=legacy-1024-layout; results require exact screenshot review for the enlarged UI"
+Note "COORDINATE_TESTS=first-five-tabs-real-clicks; last-two-native-Ctrl-PageDown; full-width-layout-NOT_TESTED"
 Note "VISUAL_CONFORMITY=NOT_EVALUATED"
 Note "MESA_SOURCE=https://github.com/pal1000/mesa-dist-win/releases/tag/26.2.6"
 Note "MESA_VARIANT=release-mingw"
@@ -23,6 +23,24 @@ Expand-Archive -LiteralPath $outer.FullName -DestinationPath extracted -Force
 
 $exe = Join-Path $PWD "extracted\bforartists.exe"
 if (-not (Test-Path -LiteralPath $exe)) { Note "BLOCKED: executable missing"; exit 3 }
+
+$uiScript = Join-Path $PWD 'extracted\5.3\scripts\startup\bl_ui\space_lestudio.py'
+$originalUiHash = (Get-FileHash -LiteralPath $uiScript -Algorithm SHA256).Hash
+$replacement = Join-Path $PWD 'space_lestudio_enum_fix.py'
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/KayouCode/Bforartists/12be9d6ecdd73197b8392c54f5f0b9e9c7c084ae/scripts/startup/bl_ui/space_lestudio.py' -OutFile $replacement
+$normalizedUi = [System.IO.File]::ReadAllText($replacement).Replace("`r`n","`n")
+$uiHash = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($normalizedUi)))
+if ($uiHash -ne '52CE93B6F8A9D6B9F7DEDC56DFD1CF5FE1B4E7320448428EDAA561DDDBA97CBA') { throw 'UI enum fix hash mismatch' }
+Copy-Item -LiteralPath $replacement -Destination $uiScript
+@{
+  executable_commit='593019d7355f8dd5dc769ae6735e05ec425e8138'
+  executable_sha256=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
+  ui_correction_commit='12be9d6ecdd73197b8392c54f5f0b9e9c7c084ae'
+  correction='Python RNA enum identifier only; executable unchanged'
+  original_ui_sha256=$originalUiHash
+  corrected_ui_normalized_sha256=$uiHash
+} | ConvertTo-Json | Set-Content -LiteralPath 'capture\package-provenance.json'
+Note "UI_CORRECTION_COMMIT=12be9d6ecdd73197b8392c54f5f0b9e9c7c084ae EXE_UNCHANGED=True"
 
 $mesaVersion = "26.2.6"
 $mesaArchive = Join-Path $PWD "mesa3d-$mesaVersion-release-mingw.7z"
@@ -179,9 +197,8 @@ output = os.path.join(os.getcwd(), "capture", "opengl-gui-probe.json")
 def inspect_gui():
     result = {"mode": "graphical", "binary": bpy.app.binary_path, "build_hash": bpy.app.build_hash.decode()}
     try:
-        if not bpy.data.objects.get("Mission10D_Cube"):
-            bpy.ops.mesh.primitive_cube_add()
-            bpy.context.object.name = "Mission10D_Cube"
+        if not bpy.data.objects.get("Cube"):
+            raise RuntimeError("The native startup cube is missing")
         project = os.path.join(os.getcwd(), "capture", "Mission10D.blend")
         bpy.ops.wm.save_as_mainfile(filepath=project)
         result["project"] = project
@@ -293,24 +310,30 @@ public static class LeStudioRunnerInput {
 
   $tabFailures = 0
   $tabs = @(
-    @{ Name = "Accueil"; X = 180 },
-    @{ Name = "Modélisation"; X = 275 },
-    @{ Name = "Sculpture"; X = 377 },
-    @{ Name = "Matériaux"; X = 466 },
-    @{ Name = "Rendu"; X = 545 },
-    @{ Name = "Animation"; X = 635 },
-    @{ Name = "Scripting"; X = 720 },
-    @{ Name = "Modélisation"; X = 275 }
+    @{ Name = "Accueil"; X = 250 },
+    @{ Name = "Modélisation"; X = 350 },
+    @{ Name = "Sculpture"; X = 480 },
+    @{ Name = "Matériaux"; X = 595 },
+    @{ Name = "Rendu"; X = 690 },
+    @{ Name = "Animation"; Key = "^{PGDN}" },
+    @{ Name = "Scripting"; Key = "^{PGDN}" },
+    @{ Name = "Modélisation"; X = 350 }
   )
   foreach ($tab in $tabs) {
     $focus = [LeStudioRunnerInput]::SetForegroundWindow($process.MainWindowHandle)
     Start-Sleep -Milliseconds 300
     $foregroundHandle = [LeStudioRunnerInput]::GetForegroundWindow()
-    [void][LeStudioRunnerInput]::SetCursorPos([int]$tab.X, 15)
-    Start-Sleep -Milliseconds 150
-    [LeStudioRunnerInput]::mouse_event(0x02, 0, 0, 0, [UIntPtr]::Zero)
-    Start-Sleep -Milliseconds 150
-    [LeStudioRunnerInput]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
+    if ($tab.ContainsKey('Key')) {
+      [System.Windows.Forms.SendKeys]::SendWait($tab.Key)
+      Note "TAB_INPUT_METHOD=$($tab.Name):native-keyboard-$($tab.Key)"
+    } else {
+      [void][LeStudioRunnerInput]::SetCursorPos([int]$tab.X, 15)
+      Start-Sleep -Milliseconds 150
+      [LeStudioRunnerInput]::mouse_event(0x02, 0, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 150
+      [LeStudioRunnerInput]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
+      Note "TAB_INPUT_METHOD=$($tab.Name):real-mouse-click"
+    }
     Note "TAB_INPUT=$($tab.Name) FOCUS=$focus FOREGROUND=$foregroundHandle TARGET=$($process.MainWindowHandle)"
     $eventsFile = Join-Path $PWD "capture\workspace-events.jsonl"
     $observed = $null
@@ -352,11 +375,11 @@ public static class LeStudioRunnerInput {
 
   $beforeDrag = Get-Bounds $handle
   [void][LeStudioRunnerInput]::SetForegroundWindow($handle)
-  [void][LeStudioRunnerInput]::SetCursorPos(780, 16)
+  [void][LeStudioRunnerInput]::SetCursorPos(100, 16)
   Start-Sleep -Milliseconds 180
   [LeStudioRunnerInput]::mouse_event(0x02, 0, 0, 0, [UIntPtr]::Zero)
   Start-Sleep -Milliseconds 180
-  [void][LeStudioRunnerInput]::SetCursorPos(700, 95)
+  [void][LeStudioRunnerInput]::SetCursorPos(220, 95)
   Start-Sleep -Milliseconds 450
   [LeStudioRunnerInput]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
   Start-Sleep -Seconds 1
@@ -500,9 +523,9 @@ if ($colors.Count -lt 16 -or $sum -lt 10000) {
 }
 Note "CAPTURE_SHA256=$((Get-FileHash $png -Algorithm SHA256).Hash)"
 $rightActions = @(
-  @{ Name = "Bell"; X = $screen.Width - 206 },
-  @{ Name = "Help"; X = $screen.Width - 180 },
-  @{ Name = "User"; X = $screen.Width - 154 }
+  @{ Name = "Bell"; X = $screen.Width - 241 },
+  @{ Name = "Help"; X = $screen.Width - 201 },
+  @{ Name = "User"; X = $screen.Width - 161 }
 )
 foreach ($action in $rightActions) {
   [void][LeStudioRunnerInput]::SetForegroundWindow($handle)
@@ -632,7 +655,7 @@ import os
 def verify_reload():
     result = {
         "filepath": bpy.data.filepath,
-        "cube_count": sum(1 for ob in bpy.data.objects if ob.name == "Mission10D_Cube" and ob.type == "MESH"),
+        "cube_count": sum(1 for ob in bpy.data.objects if ob.name == "Cube" and ob.type == "MESH"),
         "scene": bpy.context.scene.name if bpy.context.scene else None,
     }
     with open(os.path.join(os.getcwd(), "capture", "reload-probe.json"), "w", encoding="utf-8") as handle:

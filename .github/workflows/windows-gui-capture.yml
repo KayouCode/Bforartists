@@ -47,11 +47,11 @@ jobs:
           $exe = Join-Path $PWD 'extracted\bforartists.exe'
           if (-not (Test-Path -LiteralPath $exe)) { throw 'Extracted application unavailable' }
           $test = Join-Path $PWD 'lestudio_native_ui_regression.py'
-          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/KayouCode/Bforartists/593019d7355f8dd5dc769ae6735e05ec425e8138/tests/python/lestudio_native_ui_regression.py' -OutFile $test
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/KayouCode/Bforartists/12be9d6ecdd73197b8392c54f5f0b9e9c7c084ae/tests/python/lestudio_native_ui_regression.py' -OutFile $test
           $text = [System.IO.File]::ReadAllText($test).Replace("`r`n","`n")
           $bytes = [System.Text.Encoding]::UTF8.GetBytes($text)
           $hash = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($bytes))
-          if ($hash -ne 'BA49F9877A5C2E942CAD5DD1A8DF78773D5CC2AB1AB6149EBD9A8A55C9DDC9F2') { throw 'Approved regression script mismatch' }
+          if ($hash -ne 'ADEF25FE9ACFD9AD1908936946ADA2A2603B50C34C1858E51B9F35DDF00C297F') { throw 'Approved regression script mismatch' }
           $profile = Join-Path $PWD 'native-test-profile'
           foreach ($entry in @{APPDATA='roaming'; BLENDER_USER_CONFIG='config'; BLENDER_USER_RESOURCES='resources'; BLENDER_USER_SCRIPTS='scripts'; BLENDER_USER_EXTENSIONS='extensions'; BLENDER_USER_DATAFILES='datafiles'; TEMP='temp'; TMP='temp'}.GetEnumerator()) {
             $path = Join-Path $profile $entry.Value
