@@ -32,12 +32,39 @@ jobs:
           path: package-artifact
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
-          run-id: 43441976370
+          run-id: 43589347831
 
       - name: Deploy Mesa locally, verify OpenGL, and capture
         id: capture
         shell: pwsh
         run: '& .\scripts\windows-gui-capture.ps1'
+
+      - name: Verify approved native GUI integration test
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Join-Path $PWD 'extracted\bforartists.exe'
+          if (-not (Test-Path -LiteralPath $exe)) { throw 'Extracted application unavailable' }
+          $test = Join-Path $PWD 'lestudio_native_ui_regression.py'
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/KayouCode/Bforartists/593019d7355f8dd5dc769ae6735e05ec425e8138/tests/python/lestudio_native_ui_regression.py' -OutFile $test
+          $text = [System.IO.File]::ReadAllText($test).Replace("`r`n","`n")
+          $bytes = [System.Text.Encoding]::UTF8.GetBytes($text)
+          $hash = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($bytes))
+          if ($hash -ne 'BA49F9877A5C2E942CAD5DD1A8DF78773D5CC2AB1AB6149EBD9A8A55C9DDC9F2') { throw 'Approved regression script mismatch' }
+          $profile = Join-Path $PWD 'native-test-profile'
+          foreach ($entry in @{APPDATA='roaming'; BLENDER_USER_CONFIG='config'; BLENDER_USER_RESOURCES='resources'; BLENDER_USER_SCRIPTS='scripts'; BLENDER_USER_EXTENSIONS='extensions'; BLENDER_USER_DATAFILES='datafiles'; TEMP='temp'; TMP='temp'}.GetEnumerator()) {
+            $path = Join-Path $profile $entry.Value
+            New-Item -ItemType Directory -Force $path | Out-Null
+            [Environment]::SetEnvironmentVariable($entry.Key,$path,'Process')
+          }
+          $env:GALLIUM_DRIVER='llvmpipe'
+          $env:LIBGL_ALWAYS_SOFTWARE='true'
+          $output = Join-Path $PWD 'capture\native-ui'
+          $proc = Start-Process -FilePath $exe -ArgumentList "--factory-startup --gpu-backend opengl --python `"$test`" -- `"$output`"" -WindowStyle Maximized -RedirectStandardOutput 'capture\native-ui-stdout.log' -RedirectStandardError 'capture\native-ui-stderr.log' -PassThru
+          if (-not $proc.WaitForExit(120000)) { Stop-Process -Id $proc.Id -Force; throw 'Native integration test timed out' }
+          $report = Get-Content -LiteralPath (Join-Path $output 'native-ui.json') -Raw | ConvertFrom-Json
+          if ($report.status -ne 'NATIVE_UI_INTEGRATION_PASS') { throw "Native integration result: $($report.status)" }
 
       - name: Record diagnostic status
         if: always()

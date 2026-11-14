@@ -4,8 +4,10 @@ function Note([string]$message) {
   "$(Get-Date -Format o) $message" | Tee-Object -FilePath $log -Append
 }
 
-Note "PACKAGE_COMMIT=70bd023d6d8b6b411dfb217c4bc4b9f62db5fbf2"
+Note "PACKAGE_COMMIT=593019d7355f8dd5dc769ae6735e05ec425e8138"
 Note "CAPTURE_COMMIT=$env:GITHUB_SHA"
+Note "COORDINATE_TESTS=legacy-1024-layout; results require exact screenshot review for the enlarged UI"
+Note "VISUAL_CONFORMITY=NOT_EVALUATED"
 Note "MESA_SOURCE=https://github.com/pal1000/mesa-dist-win/releases/tag/26.2.6"
 Note "MESA_VARIANT=release-mingw"
 Note "MESA_LICENSE=MIT"
@@ -13,9 +15,10 @@ Note "RUNNER_NAME=$env:RUNNER_NAME"
 (query user 2>&1 | Out-String) | Tee-Object -FilePath $log -Append
 
 $outer = Get-ChildItem package-artifact -Filter "LeStudio-Windows-*.zip" -File
-if ($outer.Count -ne 1 -or $outer.Name -ne "LeStudio-Windows-70bd023d.zip") { Note "BLOCKED: expected commit package archive missing"; exit 2 }
+if ($outer.Count -ne 1 -or $outer.Name -ne "LeStudio-Windows-593019d7.zip") { Note "BLOCKED: expected commit package archive missing"; exit 2 }
 Note "PACKAGE_BYTES=$($outer.Length)"
 Note "PACKAGE_SHA256=$((Get-FileHash $outer.FullName -Algorithm SHA256).Hash)"
+if ((Get-FileHash $outer.FullName -Algorithm SHA256).Hash -ne "D6805D40F68F8B965A41359D3096502BA47BBF4A28AA82183AB27350E7A7BDDB") { throw "Package hash mismatch" }
 Expand-Archive -LiteralPath $outer.FullName -DestinationPath extracted -Force
 
 $exe = Join-Path $PWD "extracted\bforartists.exe"
@@ -537,7 +540,7 @@ if (Test-Path -LiteralPath "capture\opengl-gui-probe.json") {
   $guiProbe = Get-Content -LiteralPath "capture\opengl-gui-probe.json" -Raw
   Note "GUI_OPENGL_PROBE=$guiProbe"
   $guiData = $guiProbe | ConvertFrom-Json
-  if (-not $guiData.build_hash.StartsWith("70bd023d6d8b")) { $frameFailures++; Note "BLOCKED: graphical executable commit mismatch" }
+  if (-not $guiData.build_hash.StartsWith("593019d7355f")) { $frameFailures++; Note "BLOCKED: graphical executable commit mismatch" }
 }
 else {
   Note "GUI_OPENGL_PROBE=NOT_AVAILABLE"
