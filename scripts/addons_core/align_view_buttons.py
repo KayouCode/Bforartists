@@ -43,6 +43,10 @@ bl_info = {
 }
 
 def align_view_buttons(self, context):
+    if context.window is not None and context.window.workspace.name == "Modélisation":
+        # The compact header exposes the native View menu; the full button
+        # strip and its preferences remain available in other workspaces.
+        return
     layout = self.layout
     view = context.space_data
     overlay = view.overlay

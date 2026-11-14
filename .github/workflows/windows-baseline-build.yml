@@ -189,8 +189,17 @@ jobs:
               throw "Release resource mismatch: $name"
             }
           }
+          foreach ($relative in @("startup/bl_ui/lestudio_icons.py", "startup/bl_ui/space_lestudio.py", "startup/bl_ui/space_filebrowser.py")) {
+            $leaf = Split-Path $relative -Leaf
+            $packaged = @(Get-ChildItem -LiteralPath $release -Filter $leaf -File -Recurse)
+            if ($packaged.Count -ne 1 -or
+                (Get-FileHash $packaged[0].FullName -Algorithm SHA256).Hash -ne
+                (Get-FileHash (Join-Path "scripts" $relative) -Algorithm SHA256).Hash) {
+              throw "LeStudio UI module missing or mismatched: $relative"
+            }
+          }
           $launchLog = Join-Path $PWD "evidence\headless-launch.txt"
-          & $exe --background --factory-startup --python-expr "import bpy; names={w.name for w in bpy.data.workspaces}; required={'Accueil','Modélisation','Sculpture','Matériaux','Rendu','Animation','Scripting'}; assert required <= names, (names, required); assert bpy.context.window.workspace.name == 'Modélisation', bpy.context.window.workspace.name; print('LESTUDIO_TOPBAR_LAUNCH_OK', bpy.app.version_string, bpy.app.build_hash.decode(), sorted(names))" *>&1 | Tee-Object -FilePath $launchLog
+          & $exe --background --factory-startup --python-expr "import bpy; names={w.name for w in bpy.data.workspaces}; required={'Accueil','Modélisation','Sculpture','Matériaux','Rendu','Animation','Scripting'}; assert required <= names, (names, required); assert bpy.context.window.workspace.name == 'Modélisation', bpy.context.window.workspace.name; areas={a.type for a in bpy.context.window.screen.areas}; assert {'VIEW_3D','PROPERTIES','FILE_BROWSER'} <= areas, areas; assert bpy.context.scene.camera is not None; from bl_ui import lestudio_icons; assert callable(lestudio_icons.tool_icon); print('LESTUDIO_TOPBAR_LAUNCH_OK', bpy.app.version_string, bpy.app.build_hash.decode(), sorted(names))" *>&1 | Tee-Object -FilePath $launchLog
           if ($LASTEXITCODE -ne 0) {
             throw "Headless launch failed with exit code $LASTEXITCODE"
           }
@@ -215,6 +224,7 @@ jobs:
           $extractDir = "C:\lestudio-independent-extraction"
           New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
           $short = (git rev-parse --short=8 HEAD)
+          Copy-Item -LiteralPath "build_files\windows\Start-LeStudio-Isolated.cmd" -Destination $release
           $archive = Join-Path $artifactDir "LeStudio-Windows-$short.zip"
           & "C:\Program Files\7-Zip\7z.exe" a -tzip -mx=9 -mmt=2 $archive "$release\*"
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $archive)) {
@@ -237,7 +247,7 @@ jobs:
             throw "Independent extraction is incomplete"
           }
           $independentLog = Join-Path $PWD "evidence\independent-package-launch.txt"
-          & $extractedExe --background --factory-startup --python-expr "import bpy; expected='$((git rev-parse HEAD).Substring(0,12))'; actual=bpy.app.build_hash.decode(); assert actual.startswith(expected), (actual, expected); names={w.name for w in bpy.data.workspaces}; required={'Accueil','Modélisation','Sculpture','Matériaux','Rendu','Animation','Scripting'}; assert required <= names, (names, required); assert bpy.context.window.workspace.name == 'Modélisation', bpy.context.window.workspace.name; print('LESTUDIO_INDEPENDENT_PACKAGE_OK', actual, sorted(names))" *>&1 | Tee-Object -FilePath $independentLog
+          & $extractedExe --background --factory-startup --python-expr "import bpy; expected='$((git rev-parse HEAD).Substring(0,12))'; actual=bpy.app.build_hash.decode(); assert actual.startswith(expected), (actual, expected); names={w.name for w in bpy.data.workspaces}; required={'Accueil','Modélisation','Sculpture','Matériaux','Rendu','Animation','Scripting'}; assert required <= names, (names, required); assert bpy.context.window.workspace.name == 'Modélisation', bpy.context.window.workspace.name; areas={a.type for a in bpy.context.window.screen.areas}; assert {'VIEW_3D','PROPERTIES','FILE_BROWSER'} <= areas, areas; assert bpy.context.scene.camera is not None; from bl_ui import lestudio_icons; assert callable(lestudio_icons.tool_icon); print('LESTUDIO_INDEPENDENT_PACKAGE_OK', actual, sorted(names))" *>&1 | Tee-Object -FilePath $independentLog
           if ($LASTEXITCODE -ne 0 -or
               -not (Select-String -Path $independentLog -SimpleMatch "LESTUDIO_INDEPENDENT_PACKAGE_OK")) {
             throw "Independent extracted package launch failed"
@@ -276,7 +286,7 @@ jobs:
         with:
           name: windows-lestudio-topbar-evidence
           path: evidence
-          retention-days: 1
+          retention-days: 30
           if-no-files-found: error
 
       - name: Upload complete autonomous Windows package
@@ -285,7 +295,7 @@ jobs:
         with:
           name: windows-lestudio-complete-package
           path: C:\lestudio-artifacts\LeStudio-Windows-*.zip
-          retention-days: 1
+          retention-days: 30
           if-no-files-found: error
           compression-level: 0
 

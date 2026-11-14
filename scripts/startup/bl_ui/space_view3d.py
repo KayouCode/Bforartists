@@ -882,6 +882,12 @@ class VIEW3D_HT_header(Header):
 
         layout = self.layout
 
+        if (context.window is not None and context.window.workspace.name == 'Modélisation'
+                and context.mode in {'OBJECT', 'EDIT_MESH'}):
+            from bl_ui.space_lestudio import draw_modeling_header
+            draw_modeling_header(layout, context)
+            return
+
         tool_settings = context.tool_settings
         view = context.space_data
         shading = view.shading

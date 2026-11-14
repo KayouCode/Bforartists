@@ -101,6 +101,12 @@ class FILEBROWSER_HT_header(Header):
 
         space_data = context.space_data
 
+        if (SpaceAssetInfo.is_asset_browser(space_data) and context.window is not None
+                and context.window.workspace.name == "Modélisation"):
+            from bl_ui.space_lestudio import draw_library_header
+            draw_library_header(layout, context)
+            return
+
         if space_data.active_operator is None:
             self.draw_editor_type_menu(context)
 

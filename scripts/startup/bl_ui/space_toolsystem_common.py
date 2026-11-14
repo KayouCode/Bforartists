@@ -719,6 +719,10 @@ class ToolSelectPanelHelper:
 
             is_active = (item.idname == tool_active_id)
             icon_value = ToolSelectPanelHelper._icon_value_from_icon_handle(item.icon)
+            if (space_type == 'VIEW_3D' and context.window is not None and
+                    context.window.workspace.name == 'Modélisation'):
+                from bl_ui.lestudio_icons import tool_icon
+                icon_value = tool_icon(item.idname) or icon_value
 
             sub = ui_gen.send(False)
 
