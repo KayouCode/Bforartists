@@ -39,8 +39,8 @@ class LESTUDIO_OT_library_category(Operator):
 
 def _set_library_order(params, category):
     if category == "PRIMITIVES":
-        params.sort_method = "FILE_SORT_ASSET_CATALOG"
-    elif params.sort_method == "FILE_SORT_ASSET_CATALOG":
+        params.sort_method = "ASSET_CATALOG"
+    elif params.sort_method == "ASSET_CATALOG":
         params.sort_method = "FILE_SORT_ALPHA"
 
 

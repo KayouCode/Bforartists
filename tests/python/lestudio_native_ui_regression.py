@@ -53,7 +53,10 @@ def inspect_startup():
     region = next(region for region in browser.regions if region.type == "WINDOW")
     params = browser.spaces.active.params
     assert params.asset_library_reference == "LeStudio Primitives"
-    assert params.sort_method == "FILE_SORT_ASSET_CATALOG", params.sort_method
+    from bl_ui.space_lestudio import _set_library_order
+    params.sort_method = "FILE_SORT_ALPHA"
+    _set_library_order(params, "PRIMITIVES")
+    assert params.sort_method == "ASSET_CATALOG", params.sort_method
     with bpy.context.temp_override(window=window, area=browser, region=region):
         bpy.ops.file.select_all(action="SELECT")
         actual = [asset.name for asset in bpy.context.selected_assets]
@@ -109,7 +112,7 @@ def after_reload():
     try:
         assert snapshot() == report["saved"]
         browser = next(area for area in bpy.context.window.screen.areas if area.ui_type == "ASSETS")
-        assert browser.spaces.active.params.sort_method == "FILE_SORT_ASSET_CATALOG"
+        assert browser.spaces.active.params.sort_method == "ASSET_CATALOG"
         check("reload_exact_native_state")
         bpy.ops.screen.screenshot(filepath=str(output / "native-ui.png"))
         report["status"] = "NATIVE_UI_INTEGRATION_PASS"
