@@ -1343,7 +1343,8 @@ static void widget_draw_icon(
    * Menu tools (Quick Favorites) need small icons (16px) like other menu items.
    * Detection: static toolbar has block_flags=0 & no handle; popovers/pie menus/hold-popups have their flags. */
   const bool is_tool = but_is_tool(but);
-  const bool is_static_toolbar = (but->block->flag == 0) && (but->block->handle == nullptr);
+  const bool is_static_toolbar = (but->block->flag == 0) && (but->block->handle == nullptr) &&
+                                 (but->block->panel != nullptr);
   const bool is_popover = (but->block->flag & BLOCK_POPOVER) != 0;
   const bool is_pie = (but->block->flag & BLOCK_PIE_MENU) != 0;
   const bool is_hold_popup = (but->block->flag & BLOCK_POPUP_HOLD) != 0;
@@ -2925,7 +2926,8 @@ static void widget_draw_text_icon(const uiFontStyle *fstyle,
      * Left sidebar toolbar (block_flags=0), popovers (wm.toolbar), pie menus, and
      * hold-popups (tool submenu from toolbar buttons) get large icons.
      * Regular menus (Quick Favorites) get small icons. */
-    const bool is_static_toolbar = (but->block->flag == 0) && (but->block->handle == nullptr);
+    const bool is_static_toolbar = (but->block->flag == 0) && (but->block->handle == nullptr) &&
+                                   (but->block->panel != nullptr);
     const bool is_popover = (but->block->flag & BLOCK_POPOVER) != 0;
     const bool is_pie = (but->block->flag & BLOCK_PIE_MENU) != 0;
     const bool is_hold_popup = (but->block->flag & BLOCK_POPUP_HOLD) != 0;
@@ -4624,6 +4626,48 @@ static void widget_numslider(Button *but,
   }
 }
 
+/* LeStudio's compact overview keeps the native RNA slider and event handling.
+ * Only its drawing differs: a thin track and a handle, with the value editable
+ * in the adjacent native number field. Text editing retains the standard widget. */
+static void widget_lestudio_slider(Button *but,
+                                   uiWidgetColors *wcol,
+                                   rcti *rect,
+                                   const WidgetStateInfo *state,
+                                   int roundboxalign,
+                                   const float zoom)
+{
+  if (state->is_text_input || (but->drawflag & BUT_INDETERMINATE) ||
+      button_scale_type(but) != PROP_SCALE_LINEAR || but->softmax <= but->softmin)
+  {
+    widget_numslider(but, wcol, rect, state, roundboxalign, zoom);
+    return;
+  }
+  const float radius = 4.5f * UI_SCALE_FAC * zoom;
+  const float factor = std::clamp(
+      float((button_value_get(but) - but->softmin) / (but->softmax - but->softmin)), 0.0f, 1.0f);
+  const float left = rect->xmin + radius;
+  const float right = std::max(left, rect->xmax - radius);
+  const float center_y = BLI_rcti_cent_y(rect);
+  const float handle_x = left + (right - left) * factor;
+  const float thickness = 2.0f * UI_SCALE_FAC * zoom;
+  rctf track = {left, right, center_y - thickness, center_y + thickness};
+  rctf fill = {left, handle_x, track.ymin, track.ymax};
+  rctf handle = {handle_x - radius, handle_x + radius, center_y - radius, center_y + radius};
+  float track_color[4], fill_color[4];
+  for (int component = 0; component < 4; component++) {
+    track_color[component] = wcol->outline[component] / 255.0f;
+    fill_color[component] = wcol->item[component] / 255.0f;
+  }
+  GPU_blend(GPU_BLEND_ALPHA);
+  widgetbase_draw_cache_flush();
+  draw_roundbox_4fv(&track, true, thickness, track_color);
+  if (handle_x > left) {
+    draw_roundbox_4fv(&fill, true, thickness, fill_color);
+  }
+  draw_roundbox_4fv(&handle, true, radius, fill_color);
+  GPU_blend(GPU_BLEND_NONE);
+}
+
 /* I think 3 is sufficient border to indicate keyed status */
 #define SWATCH_KEYED_BORDER 3
 
@@ -5555,12 +5599,24 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
   const ThemeUI *tui = &btheme->tui;
   const uiFontStyle *fstyle = &style->widget;
   uiFontStyle lestudio_brand_font;
+  if (region && region->regiontype == RGN_TYPE_TOOLS && but->block->panel &&
+      STREQ(but->block->panel->panelname, "VIEW3D_PT_tools_active") &&
+      but->icon >= BIFICONID_LAST_STATIC && !but_is_tool(but))
+  {
+    but->icon_scale = 2.0f;
+  }
+  if (region && region->regiontype == RGN_TYPE_NAV_BAR && but->block->panel &&
+      STREQ(but->block->panel->panelname, "PROPERTIES_PT_navigation_bar") &&
+      but->icon >= BIFICONID_LAST_STATIC)
+  {
+    but->icon_scale = 1.5f;
+  }
   if (but->type == ButtonType::Label && but->icon == ICON_LESTUDIO_LOGO) {
     lestudio_brand_font = *fstyle;
-    lestudio_brand_font.points *= 1.4f;
+    lestudio_brand_font.points *= 2.0f;
     lestudio_brand_font.character_weight = 650;
     fstyle = &lestudio_brand_font;
-    but->icon_scale = 1.35f;
+    but->icon_scale = 1.8f;
   }
   WidgetType *wt = nullptr;
 
@@ -5854,14 +5910,26 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
 
   WidgetType lestudio_wt;
   uiWidgetColors lestudio_colors;
+  const Panel *panel = but->block->panel;
+  const bool lestudio_slider = but->type == ButtonType::NumSlider && panel &&
+                               (STREQ(panel->panelname, "LESTUDIO_PT_material") ||
+                                STREQ(panel->panelname, "LESTUDIO_PT_render"));
+  if (lestudio_slider) {
+    lestudio_wt = *wt;
+    lestudio_wt.custom = widget_lestudio_slider;
+    if (!but->editstr && !(but->drawflag & BUT_INDETERMINATE)) {
+      lestudio_wt.text = nullptr;
+    }
+    wt = &lestudio_wt;
+  }
   if (but->type == ButtonType::Tab && (but->drawflag & BUT_LESTUDIO_TAB)) {
     lestudio_wt = *wt;
     lestudio_colors = *wt->wcol_theme;
     /* Anthracite inactive tabs, gold selected tab, matching the approved
      * LeStudio header without changing tabs elsewhere in Bforartists. */
-    const uchar inner[4] = {24, 25, 27, 255};
+    const uchar inner[4] = {21, 22, 23, 255};
     const uchar inner_sel[4] = {112, 76, 17, 255};
-    const uchar outline[4] = {30, 31, 33, 255};
+    const uchar outline[4] = {21, 22, 23, 255};
     const uchar outline_sel[4] = {212, 175, 55, 255};
     const uchar text[4] = {225, 225, 225, 255};
     const uchar text_sel[4] = {255, 255, 255, 255};
@@ -5871,7 +5939,7 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
     copy_v4_v4_uchar(lestudio_colors.outline_sel, outline_sel);
     copy_v4_v4_uchar(lestudio_colors.text, text);
     copy_v4_v4_uchar(lestudio_colors.text_sel, text_sel);
-    lestudio_colors.shaded = 1;
+    lestudio_colors.shaded = (but->flag & (UI_SELECT | UI_SELECT_DRAW)) ? 1 : 0;
     lestudio_colors.shadetop = -6;
     lestudio_colors.shadedown = 8;
     lestudio_colors.roundness = 0.32f;
@@ -6550,3 +6618,4 @@ void draw_preview_item(const uiFontStyle *fstyle,
 /** \} */
 
 }  // namespace blender::ui
+

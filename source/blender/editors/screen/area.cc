@@ -13,6 +13,7 @@
 #include "MEM_guardedalloc.h"
 
 #include "DNA_userdef_types.h"
+#include "DNA_workspace_types.h"
 
 #include "BLI_linklist.hh"
 #include "BLI_listbase.hh"
@@ -1667,14 +1668,20 @@ static void region_rect_recursive(
   int prefsizex = UI_SCALE_FAC *
                   ((region->sizex > 1) ? region->sizex + 0.5f : region->runtime->type->prefsizex);
   int prefsizey;
+  if (area->spacetype == SPACE_PROPERTIES && region->regiontype == RGN_TYPE_NAV_BAR) {
+    prefsizex = int(2.2f * UI_UNIT_X);
+  }
 
   if (region->regiontype == RGN_TYPE_HEADER) {
-    prefsizey = (area->spacetype == SPACE_TOPBAR) ?
-                    int(ceilf(ED_area_headersize() * 1.25f)) :
-                    ED_area_headersize();
+    prefsizey = (area->spacetype == SPACE_TOPBAR) ? int(ceilf(ED_area_headersize() * 1.5f)) :
+                ELEM(area->spacetype, SPACE_VIEW3D, SPACE_PROPERTIES) ?
+                                                    int(ceilf(ED_area_headersize() * 1.35f)) :
+                area->spacetype == SPACE_FILE ? int(ceilf(ED_area_headersize() * 1.25f)) :
+                                                ED_area_headersize();
   }
   else if (region->regiontype == RGN_TYPE_TOOL_HEADER) {
-    prefsizey = ED_area_headersize();
+    prefsizey = area->spacetype == SPACE_PROPERTIES ? int(ceilf(ED_area_headersize() * 1.35f)) :
+                                                      ED_area_headersize();
   }
   else if (region->regiontype == RGN_TYPE_FOOTER) {
     prefsizey = ED_area_footersize();
@@ -2328,6 +2335,19 @@ void ED_area_init(bContext *C, const wmWindow *win, ScrArea *area)
 
   rcti window_rect;
   WM_window_screen_rect_calc(win, &window_rect);
+
+  /* Align the modeling Properties heading with the viewport content. Ensure
+   * the presentation region before assigning types or calculating rectangles;
+   * adding it in SpaceType::init would leave its runtime type uninitialized. */
+  if (area->spacetype == SPACE_PROPERTIES && workspace &&
+      STREQ(workspace->id.name + 2, "Modélisation") &&
+      !BKE_area_find_region_type(area, RGN_TYPE_TOOL_HEADER))
+  {
+    ARegion *region = BKE_area_region_new();
+    region->regiontype = RGN_TYPE_TOOL_HEADER;
+    region->alignment = RGN_ALIGN_TOP;
+    BLI_addhead(&area->regionbase, region);
+  }
 
   ED_area_and_region_types_init(area);
 
@@ -4590,3 +4610,4 @@ bool ED_region_snap_size_apply(ARegion *region, int snap_flag)
 }
 
 }  // namespace blender
+

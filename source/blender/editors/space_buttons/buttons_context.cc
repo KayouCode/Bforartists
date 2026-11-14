@@ -26,6 +26,7 @@
 #include "DNA_scene_types.h"
 #include "DNA_sequence_types.h"
 #include "DNA_windowmanager_types.h"
+#include "DNA_workspace_types.h"
 #include "DNA_world_types.h"
 
 #include "BKE_action.hh"
@@ -1268,6 +1269,15 @@ int /*eContextResult*/ buttons_context(const bContext *C,
 static bool buttons_panel_context_poll(const bContext *C, PanelType * /*pt*/)
 {
   SpaceProperties *sbuts = CTX_wm_space_properties(C);
+  const WorkSpace *workspace = CTX_wm_workspace(C);
+  /* The LeStudio overview already exposes the object name and native pin.
+   * Preserve the native path for other contexts, searches and pinned data. */
+  if (workspace && STREQ(workspace->id.name + 2, "Modélisation") &&
+      sbuts->mainb == BCONTEXT_OBJECT && !(sbuts->flag & SB_PIN_CONTEXT) &&
+      ED_buttons_search_string_length(sbuts) == 0)
+  {
+    return false;
+  }
   return sbuts->mainb != BCONTEXT_TOOL;
 }
 
@@ -1395,3 +1405,4 @@ ID *buttons_context_id_path(const bContext *C)
 }
 
 }  // namespace blender
+

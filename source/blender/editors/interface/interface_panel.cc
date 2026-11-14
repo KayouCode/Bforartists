@@ -1267,6 +1267,27 @@ static void panel_draw_aligned_backdrop(const ARegion *region,
   const float hide_bg = panel->type->flag & PANEL_HIDE_BG;
   const bool is_dragging = panel_is_dragging(panel);
 
+  /* The four LeStudio overview groups retain native panel interaction and
+   * layout. Their headers use the reference's rounded amber/burgundy treatment. */
+  if (STREQ(panel->panelname, "LESTUDIO_PT_transform") ||
+      STREQ(panel->panelname, "LESTUDIO_PT_material") ||
+      STREQ(panel->panelname, "LESTUDIO_PT_modifiers") ||
+      STREQ(panel->panelname, "LESTUDIO_PT_render"))
+  {
+    const float aspect = panel->runtime->block->aspect;
+    const float radius = 0.3f * U.widget_unit / aspect;
+    const float left[4] = {0.31f, 0.14f, 0.055f, 1.0f};
+    const float right[4] = {0.23f, 0.055f, 0.075f, 1.0f};
+    const float outline[4] = {0.37f, 0.20f, 0.14f, 1.0f};
+    rctf header = {
+        float(rect->xmin), float(rect->xmax), float(header_rect->ymin), float(header_rect->ymax)};
+    GPU_blend(GPU_BLEND_ALPHA);
+    draw_roundbox_corner_set(CNR_ALL);
+    draw_roundbox_4fv_ex(&header, left, right, 0.0f, outline, U.pixelsize, radius);
+    GPU_blend(GPU_BLEND_NONE);
+    return;
+  }
+
   /* BFA: Allow header drawing for collapsed sub-panels when HIDE_BG is active in RGN_TYPE_TOOLS */
   if (is_subpanel && !is_open && !(hide_bg && region->regiontype == RGN_TYPE_TOOLS)) {
     return;
@@ -2972,3 +2993,4 @@ void panel_stop_animation(const bContext *C, Panel *panel)
 /** \} */
 
 }  // namespace blender::ui
+

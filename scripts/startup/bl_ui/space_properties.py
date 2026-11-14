@@ -42,6 +42,13 @@ class PROPERTIES_HT_header(Header):
         return any(getattr(space, tab_info[0]) for tab_info in tabs_attr_infos)
 
     def draw(self, context):
+        if context.window.workspace.name == "Modélisation" and context.space_data.context == "OBJECT":
+            self.layout.label(text="Propriétés")
+            self.layout.separator_spacer()
+            self.layout.operator("buttons.toggle_pin", text="",
+                                 icon="PINNED" if context.space_data.use_pin_id else "UNPINNED",
+                                 emboss=False)
+            return
         self.draw_editor_type_menu(context)
 
         layout = self.layout
@@ -86,6 +93,36 @@ class PROPERTIES_PT_navigation_bar(Panel):
         layout = self.layout
 
         view = context.space_data
+
+        if context.window.workspace.name == "Modélisation" and not view.search_filter and not view.use_pin_id:
+            from bl_ui.lestudio_icons import tool_icon
+            obj = context.view_layer.objects.active
+            choices = (
+                ("OBJECT", "object", "ui.settings", True),
+                ("DATA", "data", "ui.cube", obj is not None and obj.data is not None),
+                ("MATERIAL", "material", "ui.material", obj is not None and hasattr(obj.data, "materials")),
+                ("OUTPUT", "output", "ui.image", True),
+                ("MODIFIER", "modifiers", "ui.wrench", obj is not None and obj.type in {
+                    "MESH", "CURVE", "SURFACE", "FONT", "LATTICE", "VOLUME", "POINTCLOUD", "GREASEPENCIL"}),
+                ("RENDER", "render", "ui.camera", True),
+                ("SCENE", "scene", "ui.scene", True),
+            )
+            for value, visibility, icon, available in choices:
+                if not getattr(view, "show_properties_" + visibility):
+                    continue
+                row = layout.row()
+                row.scale_y = 1.65
+                row.enabled = available
+                color = (212, 175, 55, 255) if view.context == value else (238, 238, 238, 255)
+                operator = row.operator("wm.context_set_enum", text="",
+                                        icon_value=tool_icon(icon, color=color),
+                                        depress=view.context == value)
+                operator.data_path = "space_data.context"
+                operator.value = value
+            layout.separator()
+            layout.popover(panel="PROPERTIES_PT_visibility", text="", icon="THREE_DOTS",
+                           direction="HORIZONTAL")
+            return
 
         layout.scale_x = 1.4
         layout.scale_y = 1.4
@@ -188,6 +225,15 @@ class PROPERTIES_PT_visibility(Panel):
         layout = self.layout
         layout.use_property_decorate = False
 
+        if context.window.workspace.name == "Modélisation":
+            layout.prop(space, "context", text="Contexte natif")
+            layout.prop(context.window_manager, "lestudio_show_native_object_panels",
+                        text="Propriétés natives avancées")
+            layout.prop(space, "search_filter", text="Rechercher", icon="VIEWZOOM")
+            layout.operator("screen.space_type_set_or_cycle", text="Afficher l'Outliner",
+                            icon="OOPS").space_type = "OUTLINER"
+            layout.separator()
+
         col = layout.column(align=True)
         col.label(text="Visible Tabs")
         for prop, name, icon in tabs_attr_infos:
@@ -207,3 +253,5 @@ if __name__ == "__main__":  # only for live edit.
     from bpy.utils import register_class
     for cls in classes:
         register_class(cls)
+
+

@@ -32,12 +32,11 @@ class TOPBAR_HT_tool_bar(Header):
         menus = layout.row(align=True)
         menus.menu("TOPBAR_MT_file", text="Fichier")
         menus.menu("TOPBAR_MT_edit", text="Édition")
-        menus.menu("VIEW3D_MT_object", text="Objet")
-        menus.menu("VIEW3D_MT_view", text="Vue")
-        menus.menu("VIEW3D_MT_select_object", text="Sélection")
-        menus.menu("VIEW3D_MT_add", text="Ajouter")
-        menus.menu("VIEW3D_MT_edit_mesh", text="Maillage")
-        menus.menu("VIEW3D_MT_object_context_menu", text="Outils")
+        view_menus = menus.row(align=True)
+        view_menus.emboss = "PULLDOWN_MENU"
+        for value, label in (("OBJECT", "Objet"), ("VIEW", "Vue"), ("SELECT", "Sélection"),
+                             ("ADD", "Ajouter"), ("MESH", "Maillage"), ("TOOLS", "Outils")):
+            view_menus.operator("lestudio.open_view_menu", text=label).menu = value
         menus.menu("TOPBAR_MT_help", text="Aide")
 
 

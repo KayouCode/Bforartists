@@ -8,8 +8,11 @@ import bpy
 _cache = {}
 
 
-def tool_icon(tool_id, compact=False):
+def tool_icon(tool_id, compact=False, color=(212, 175, 55, 255)):
     kind = {
+        "ui.settings": "settings", "ui.material": "material", "ui.image": "picture",
+        "ui.wrench": "wrench", "ui.camera": "camera", "ui.scene": "clapper",
+        "ui.cube": "cube", "ui.star": "star",
         "builtin.select": "select", "builtin.select_box": "box",
         "builtin.select_circle": "circle", "builtin.select_lasso": "circle",
         "builtin.cursor": "circle", "builtin.move": "move",
@@ -18,13 +21,13 @@ def tool_icon(tool_id, compact=False):
         "builtin.annotate_line": "pencil", "builtin.annotate_polygon": "triangle",
         "builtin.annotate_eraser": "pencil", "builtin.measure": "pencil",
         "builtin.primitive_cube_add": "cube", "builtin.primitive_uv_sphere_add": "sphere",
-        "builtin.extrude_region": "cube", "builtin.inset": "box",
+        "builtin.extrude_region": "extrude", "builtin.inset": "box",
         "builtin.bevel": "pencil", "builtin.loopcut_slide": "cube",
         "builtin.knife": "pencil", "builtin.poly_build": "triangle",
     }.get(tool_id)
     if kind is None:
         return None
-    key = (kind, compact)
+    key = (kind, compact, tuple(color))
     if key in _cache:
         return _cache[key]
     triangles = []
@@ -73,6 +76,10 @@ def tool_icon(tool_id, compact=False):
     elif kind == "rotate":
         circle(128,128,80,start=0.35,end=5.6)
         polygon([(214,162),(164,177),(200,213)])
+    elif kind == "extrude":
+        path([(42,42),(183,42),(183,183),(42,183)],11,True)
+        line((105,107),(223,225),13)
+        path([(159,225),(225,225),(225,159)],13)
     elif kind == "pencil":
         polygon([(54,54),(67,99),(175,207),(202,180),(94,72)])
         line((179,213),(210,182),11)
@@ -85,8 +92,38 @@ def tool_icon(tool_id, compact=False):
         path(points,10,True)
         for x,y in points:
             circle(x,y,12)
+    elif kind == "settings":
+        for y, x in ((65, 80), (128, 172), (191, 112)):
+            line((35, y), (221, y), 12)
+            path([(x-15,y-19),(x+15,y-19),(x+15,y+19),(x-15,y+19)], 10, True)
+    elif kind == "material":
+        circle(112, 132, 76)
+        path([(120,51),(157,50),(192,72),(211,107),(210,145),(190,177)], 11)
+    elif kind == "picture":
+        path([(30,43),(226,43),(226,213),(30,213)], 11, True)
+        path([(34,64),(96,134),(139,90),(174,122),(224,66)], 12)
+        circle(175,167,15)
+    elif kind == "wrench":
+        path([(44,30),(31,48),(118,147),(116,182),(139,216),(170,224),
+              (152,191),(180,167),(217,184),(207,149),(177,131),(145,132),(60,37)], 11, True)
+    elif kind == "camera":
+        path([(30,56),(226,56),(226,189),(166,189),(154,215),(101,215),(88,189),(30,189)], 11, True)
+        circle(129,124,42)
+        line((49,170),(68,170),10)
+    elif kind == "clapper":
+        path([(33,42),(224,42),(224,171),(33,171)], 11, True)
+        path([(31,177),(217,219),(226,184),(39,143)], 10, True)
+        for x in (58,112,166):
+            line((x,183+(x-58)*0.22),(x+26,157+(x-58)*0.22),10)
+    elif kind == "star":
+        points=[]
+        for i in range(10):
+            angle=math.pi/2+i*math.pi/5
+            radius=96 if i%2 == 0 else 43
+            points.append((128+radius*math.cos(angle),128+radius*math.sin(angle)))
+        path(points,11,True)
     coords=bytes(max(0,min(255,round(128+(v-128)*(0.5 if compact else 1.0)))) for point in triangles for v in point)
-    colors=bytes((212,175,55,255))*len(triangles)
+    colors=bytes(color)*len(triangles)
     _cache[key]=bpy.app.icons.new_triangles((0,255),coords,colors)
     return _cache[key]
 

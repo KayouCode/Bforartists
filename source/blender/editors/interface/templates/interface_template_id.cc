@@ -1112,7 +1112,9 @@ static void template_ID(const bContext *C,
   }
 
   /* text button with name */
-  if (id) {
+  const bool lestudio_compact_preview = hide_buttons && use_previews && block->panel &&
+                                        STREQ(block->panel->panelname, "LESTUDIO_PT_material");
+  if (id && !lestudio_compact_preview) {
     char name[UI_MAX_NAME_STR];
     const bool user_alert = (id->us <= 0);
 
@@ -1477,7 +1479,7 @@ static void template_ID_tabs(const bContext *C,
       (RNA_type_to_ID_code(type) == ID_WS && CTX_wm_area(C) &&
        CTX_wm_area(C)->spacetype == SPACE_TOPBAR);
   if (lestudio_workspace_tabs) {
-    but_height = UI_UNIT_Y * 1.2f;
+    but_height = UI_UNIT_Y * 1.6f;
   }
 
   const auto workspace_icon = [](const char *name) {
@@ -1962,3 +1964,4 @@ void template_any_id(Layout *layout,
 }
 
 }  // namespace blender::ui
+

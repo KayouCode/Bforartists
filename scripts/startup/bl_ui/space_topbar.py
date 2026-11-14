@@ -38,15 +38,15 @@ class TOPBAR_HT_upper_bar(Header):
 
         layout.separator(factor=0.55)
         brand = layout.row(align=True)
-        brand.ui_units_x = 9.8
-        brand.scale_y = 1.35
+        brand.ui_units_x = 8.4
+        brand.scale_y = 1.65
         brand.label(text="LeStudio", icon="LESTUDIO_LOGO")
 
         layout.separator(type="LINE")
 
         if not screen.show_fullscreen:
             navigation = layout.row(align=True)
-            navigation.scale_x = 1.45
+            navigation.scale_x = 1.2
             navigation.template_ID_tabs(
                 window,
                 "workspace",
@@ -68,12 +68,13 @@ class TOPBAR_HT_upper_bar(Header):
             layout.template_running_jobs()
 
         controls = layout.row(align=True)
-        controls.scale_x = 1.16
+        controls.emboss = "NONE"
+        controls.scale_x = 1.65
         controls.operator("screen.info_log_show", text="", icon="LESTUDIO_BELL")
         controls.menu("TOPBAR_MT_help", text="", icon="LESTUDIO_HELP")
         controls.operator("screen.userpref_show", text="", icon="LESTUDIO_USER")
         # Keep the three existing actions clear of the Win32 system button strip.
-        layout.separator(factor=22.0)
+        layout.separator(factor=15.0)
         # BFA - now in the toolbar as an opt-in
         # Active workspace view-layer is retrieved through window, not through workspace.
         # layout.template_ID(window, "scene", new="scene.new", unlink="scene.delete")
@@ -1155,3 +1156,4 @@ if __name__ == "__main__":  # only for live edit.
 
     for cls in classes:
         register_class(cls)
+

@@ -8,8 +8,20 @@ from bpy.types import Header
 class STATUSBAR_HT_header(Header):
     bl_space_type = 'STATUSBAR'
 
-    def draw(self, _context):
+    def draw(self, context):
         layout = self.layout
+
+        if context.workspace.name == "Modélisation":
+            # Keep native hints, warnings, counters and running jobs. Only move
+            # their presentation to the reference's left-to-right arrangement.
+            layout.template_input_status()
+            layout.template_status_info()
+            layout.separator_spacer()
+            layout.template_reports_banner()
+            layout.template_running_jobs()
+            layout.separator_spacer()
+            layout.operator("wm.splash_about", text="LeStudio", emboss=False)
+            return
 
         # input status
         layout.template_input_status()
@@ -39,3 +51,4 @@ if __name__ == "__main__":  # only for live edit.
     from bpy.utils import register_class
     for cls in classes:
         register_class(cls)
+

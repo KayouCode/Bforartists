@@ -1096,6 +1096,17 @@ void ED_fileselect_init_layout(SpaceFile *sfile, ARegion *region)
     layout->prv_border_y = pad_fac * UI_UNIT_Y;
     layout->tile_w = layout->prv_w + 2 * layout->prv_border_x;
     layout->text_lines_count = 2;
+    /* A shallow asset library must keep names visible below actual previews.
+     * This only changes tile layout; native selection, search and drag/drop remain. */
+    if (ED_fileselect_is_asset_browser(sfile) && region->winy < 6 * UI_UNIT_Y) {
+      layout->text_lines_count = 1;
+      layout->tile_border_y = 0.08f * UI_UNIT_Y;
+      layout->prv_border_y = 0.08f * UI_UNIT_Y;
+      layout->prv_h = std::max(float(UI_UNIT_Y),
+                               region->winy - layout->text_line_height -
+                                   4 * layout->tile_border_y - 2 * layout->prv_border_y -
+                                   4 * UI_SCALE_FAC);
+    }
     layout->tile_h = layout->prv_h + 2 * layout->prv_border_y +
                      layout->text_lines_count * layout->text_line_height;
     layout->width = int(BLI_rctf_size_x(&v2d->cur) - 2 * layout->tile_border_x);
@@ -1541,3 +1552,4 @@ Vector<std::string> ED_fileselect_selected_files_full_paths(const SpaceFile *sfi
 }
 
 }  // namespace blender
+

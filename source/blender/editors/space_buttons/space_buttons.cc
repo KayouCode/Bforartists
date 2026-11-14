@@ -14,6 +14,7 @@
 #include "DNA_sequence_types.h"
 #include "DNA_space_types.h"
 #include "DNA_view2d_types.h"
+#include "DNA_workspace_types.h"
 
 #include "BLI_bitmap.hh"
 #include "BLI_listbase.hh"
@@ -52,6 +53,7 @@
 #include "UI_view2d.hh"
 
 #include "BLO_read_write.hh"
+#include "GPU_framebuffer.hh"
 
 #include "buttons_intern.hh" /* own include */
 
@@ -131,6 +133,17 @@ static void buttons_free(SpaceLink *sl)
 
 /* spacetype; init callback */
 static void buttons_init(wmWindowManager * /*wm*/, ScrArea * /*area*/) {}
+
+static bool buttons_lestudio_spacer_poll(const RegionPollParams *params)
+{
+  const WorkSpace *workspace = params->context ? CTX_wm_workspace(params->context) : nullptr;
+  return workspace && STREQ(workspace->id.name + 2, "Modélisation");
+}
+
+static void buttons_lestudio_spacer_draw(const bContext * /*C*/, ARegion * /*region*/)
+{
+  GPU_clear_color(26.0f / 255.0f, 27.0f / 255.0f, 30.0f / 255.0f, 1.0f);
+}
 
 static SpaceLink *buttons_duplicate(SpaceLink *sl)
 {
@@ -1156,6 +1169,14 @@ void ED_spacetype_buttons()
   BLI_addhead(&st->regiontypes, art);
 
   /* regions: navigation bar */
+  art = MEM_new_zeroed<ARegionType>("LeStudio properties alignment region");
+  art->regionid = RGN_TYPE_TOOL_HEADER;
+  art->prefsizey = HEADERY;
+  art->poll = buttons_lestudio_spacer_poll;
+  art->draw = buttons_lestudio_spacer_draw;
+  BLI_addhead(&st->regiontypes, art);
+
+  /* regions: navigation bar */
   art = MEM_new_zeroed<ARegionType>("spacetype nav buttons region");
   art->regionid = RGN_TYPE_NAV_BAR;
   art->prefsizex = AREAMINX;
@@ -1171,3 +1192,4 @@ void ED_spacetype_buttons()
 /** \} */
 
 }  // namespace blender
+

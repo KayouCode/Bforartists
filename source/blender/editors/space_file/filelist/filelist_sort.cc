@@ -13,6 +13,7 @@
 #include "BLI_listbase.hh"
 #include "BLI_path_utils.hh"
 #include "BLI_string.hh"
+#include "BLI_utildefines.hh"
 
 #include "../filelist.hh"
 #include "filelist_intern.hh"
@@ -142,6 +143,30 @@ static int compare_name(void *user_data, const void *a1, const void *a2)
   }
 
   return compare_apply_inverted(compare_tiebreaker(entry1, entry2), sort_data);
+}
+
+static int lestudio_primitive_rank(const FileListInternEntry *entry)
+{
+  const asset_system::AssetRepresentation *asset = entry->get_asset();
+  if (!asset || asset->owner_asset_library().name() != "LeStudio Primitives") {
+    return 100;
+  }
+  constexpr const char *order[] = {"Cube",
+                                   "Sphère",
+                                   "Cylindre",
+                                   "Cône",
+                                   "Tore",
+                                   "Plan",
+                                   "Cercle",
+                                   "Icosphère",
+                                   "UV Sphère",
+                                   "Suzanne"};
+  for (int index = 0; index < 10; index++) {
+    if (STREQ(entry->name, order[index])) {
+      return index;
+    }
+  }
+  return 100;
 }
 
 static int compare_date(void *user_data, const void *a1, const void *a2)
@@ -291,6 +316,14 @@ static int compare_asset_catalog(void *user_data, const void *a1, const void *a2
     order = BLI_strcasecmp_natural(catalog1->path.c_str(), catalog2->path.c_str());
   }
 
+  if (!order && asset_library1.name() == "LeStudio Primitives" &&
+      asset_library2.name() == "LeStudio Primitives")
+  {
+    /* Use the reference order within the bundled primitives catalog. Reuse the
+     * native persisted sort mode so projects also open in unmodified Bforartists.
+     * Alphabetical sorting and every other asset library remain unchanged. */
+    order = lestudio_primitive_rank(entry1) - lestudio_primitive_rank(entry2);
+  }
   if (!order) {
     /* Order by name. */
     order = compare_tiebreaker(entry1, entry2);
@@ -352,3 +385,4 @@ void filelist_setsorting(FileList *filelist, const short sort, bool invert_sort)
 }
 
 }  // namespace blender
+

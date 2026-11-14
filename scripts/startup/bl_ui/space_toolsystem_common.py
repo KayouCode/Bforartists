@@ -665,6 +665,12 @@ class ToolSelectPanelHelper:
 
     @classmethod
     def draw_cls(cls, layout, context, detect_layout=True, scale_y=1.75):
+        if (detect_layout and context.region.type == "TOOLS" and
+                context.space_data.type == "VIEW_3D" and context.mode == "OBJECT" and
+                context.window.workspace.name == "Modélisation"):
+            from bl_ui.space_lestudio import draw_modeling_toolbar
+            draw_modeling_toolbar(layout, context)
+            return
         # Use a classmethod so it can be called outside of a panel context.
 
         # XXX, this UI isn't very nice.
@@ -1405,3 +1411,4 @@ if __name__ == "__main__":  # only for live edit.
     from bpy.utils import register_class
     for cls in classes:
         register_class(cls)
+

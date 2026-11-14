@@ -1771,20 +1771,20 @@ LRESULT WINAPI GHOST_SystemWin32::s_wndProc(HWND hwnd, uint msg, WPARAM wParam, 
           }
           /* Keep all seven workspace tabs in the client hit area. The previous
            * drag stretch began at 770 px and swallowed Rendu, Animation and
-           * Scripting clicks on a full-width window. The brand gap remains a
-           * reliable drag handle even when the window is narrow. */
+           * Scripting clicks on a full-width window. The non-interactive brand
+           * remains a drag handle. Do not extend this into the first workspace:
+           * its position depends on the header's typography and spacing. */
           const int dpi = window->getDPIHint();
           const int controls_start = window_rect.right -
                                      MulDiv(138, dpi, USER_DEFAULT_SCREEN_DPI) -
                                      MulDiv(95, dpi, USER_DEFAULT_SCREEN_DPI);
-          const bool brand_gap =
-              x > window_rect.left + MulDiv(180, dpi, USER_DEFAULT_SCREEN_DPI) &&
-              x < window_rect.left + MulDiv(260, dpi, USER_DEFAULT_SCREEN_DPI);
+          const bool brand_drag = x > window_rect.left + MulDiv(8, dpi, USER_DEFAULT_SCREEN_DPI) &&
+                                  x < window_rect.left + MulDiv(180, dpi, USER_DEFAULT_SCREEN_DPI);
           const bool after_workspace_tabs =
               x > window_rect.left + MulDiv(1400, dpi, USER_DEFAULT_SCREEN_DPI) &&
               x < controls_start;
           if (y < window_rect.top + MulDiv(32, dpi, USER_DEFAULT_SCREEN_DPI) &&
-              (brand_gap || after_workspace_tabs))
+              (brand_drag || after_workspace_tabs))
           {
             return HTCAPTION;
           }
@@ -3228,3 +3228,4 @@ bool GHOST_SystemWin32::setConsoleWindowState(GHOST_TConsoleWindowState action)
 
   return console_status_;
 }
+

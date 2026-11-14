@@ -1580,14 +1580,17 @@ void file_draw_list(const bContext *C, ARegion *region)
         has_special_file_image = true;
       }
 
-      file_draw_indicator_icons(files,
-                                file,
-                                layout,
-                                &tile_draw_rect,
-                                thumb_icon_aspect,
-                                file_type_icon,
-                                has_special_file_image,
-                                file_selflag);
+      file_draw_indicator_icons(
+          files,
+          file,
+          layout,
+          &tile_draw_rect,
+          thumb_icon_aspect,
+          (ED_fileselect_is_asset_browser(sfile) && region->winy < 6 * UI_UNIT_Y && preview_buf) ?
+              0 :
+              file_type_icon,
+          has_special_file_image,
+          file_selflag);
 
       if (do_drag) {
         file_add_preview_drag_but(
@@ -2235,3 +2238,4 @@ bool file_draw_hint_if_invalid(const bContext *C, const SpaceFile *sfile, ARegio
 }
 
 }  // namespace blender
+
