@@ -1769,15 +1769,22 @@ LRESULT WINAPI GHOST_SystemWin32::s_wndProc(HWND hwnd, uint msg, WPARAM wParam, 
             if (top) return HTTOP;
             if (bottom) return HTBOTTOM;
           }
-          /* Use the empty stretch between the fixed workspace tabs and the
-           * reserved caption/LeStudio controls. Never claim the tab hit boxes. */
+          /* Keep all seven workspace tabs in the client hit area. The previous
+           * drag stretch began at 770 px and swallowed Rendu, Animation and
+           * Scripting clicks on a full-width window. The brand gap remains a
+           * reliable drag handle even when the window is narrow. */
           const int dpi = window->getDPIHint();
           const int controls_start = window_rect.right -
                                      MulDiv(138, dpi, USER_DEFAULT_SCREEN_DPI) -
                                      MulDiv(95, dpi, USER_DEFAULT_SCREEN_DPI);
+          const bool brand_gap =
+              x > window_rect.left + MulDiv(180, dpi, USER_DEFAULT_SCREEN_DPI) &&
+              x < window_rect.left + MulDiv(260, dpi, USER_DEFAULT_SCREEN_DPI);
+          const bool after_workspace_tabs =
+              x > window_rect.left + MulDiv(1400, dpi, USER_DEFAULT_SCREEN_DPI) &&
+              x < controls_start;
           if (y < window_rect.top + MulDiv(32, dpi, USER_DEFAULT_SCREEN_DPI) &&
-              x > window_rect.left + MulDiv(770, dpi, USER_DEFAULT_SCREEN_DPI) &&
-              x < controls_start)
+              (brand_gap || after_workspace_tabs))
           {
             return HTCAPTION;
           }
