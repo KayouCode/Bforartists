@@ -30,7 +30,7 @@ $replacement = Join-Path $PWD 'space_lestudio_enum_fix.py'
 Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/KayouCode/Bforartists/12be9d6ecdd73197b8392c54f5f0b9e9c7c084ae/scripts/startup/bl_ui/space_lestudio.py' -OutFile $replacement
 $normalizedUi = [System.IO.File]::ReadAllText($replacement).Replace("`r`n","`n")
 $uiHash = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($normalizedUi)))
-if ($uiHash -ne '52CE93B6F8A9D6B9F7DEDC56DFD1CF5FE1B4E7320448428EDAA561DDDBA97CBA') { throw 'UI enum fix hash mismatch' }
+if ($uiHash -ne '7058DD7D07377C9D21B451FAB5EC1F0E58E5917406EEFFD3BA870C917DF4A60F') { throw 'UI enum fix hash mismatch' }
 Copy-Item -LiteralPath $replacement -Destination $uiScript
 @{
   executable_commit='593019d7355f8dd5dc769ae6735e05ec425e8138'

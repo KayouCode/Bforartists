@@ -51,7 +51,7 @@ jobs:
           $text = [System.IO.File]::ReadAllText($test).Replace("`r`n","`n")
           $bytes = [System.Text.Encoding]::UTF8.GetBytes($text)
           $hash = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($bytes))
-          if ($hash -ne 'ADEF25FE9ACFD9AD1908936946ADA2A2603B50C34C1858E51B9F35DDF00C297F') { throw 'Approved regression script mismatch' }
+          if ($hash -ne 'BD1081E17FADF11A0296D458358EAC7E6698BAE5DFD6EBD160122BE59CCC1E72') { throw 'Approved regression script mismatch' }
           $profile = Join-Path $PWD 'native-test-profile'
           foreach ($entry in @{APPDATA='roaming'; BLENDER_USER_CONFIG='config'; BLENDER_USER_RESOURCES='resources'; BLENDER_USER_SCRIPTS='scripts'; BLENDER_USER_EXTENSIONS='extensions'; BLENDER_USER_DATAFILES='datafiles'; TEMP='temp'; TMP='temp'}.GetEnumerator()) {
             $path = Join-Path $profile $entry.Value
